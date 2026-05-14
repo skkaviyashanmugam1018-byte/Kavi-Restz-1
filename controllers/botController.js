@@ -1,6 +1,7 @@
 const Session  = require("../models/Session");
 const Order    = require("../models/Order");
 const MENU     = require("../config/menu");
+const CATALOGUE_MAP = require("../config/catalogue");
 const axios    = require("axios");
 const { sendText, sendButtons, sendList } = require("../config/whatsapp");
 
@@ -30,6 +31,50 @@ const sendImage = async (to, imageUrl, caption = "") => {
     );
   } catch (err) {
     console.error("❌ sendImage error:", err.response?.data || err.message);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// Send Catalogue Message
+// ─────────────────────────────────────────────────────────────
+
+const sendCatalogueMessage = async (to) => {
+  try {
+    const API_VERSION = process.env.WHATSAPP_API_VERSION || "v25.0";
+    const url = `https://graph.facebook.com/${API_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    await axios.post(
+      url,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "catalog_message",
+          body: {
+            text: "🍽️ *Kavi Chettinadu Restaurant*\n\nஎங்கள் menu பாருங்க! விரும்பியதை cart-ல போட்டு order பண்ணுங்க 😊",
+          },
+          footer: {
+            text: "Rameswaram | 📞 93843 17768",
+          },
+          action: {
+            name: "catalog_message",
+            parameters: {
+              thumbnail_product_retailer_id: "BIRY002",
+            },
+          },
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("✅ Catalogue message sent to:", to);
+  } catch (err) {
+    console.error("❌ sendCatalogue error:", err.response?.data || err.message);
   }
 };
 
@@ -285,10 +330,62 @@ Thank you for ordering with us! 🙏`,
 };
 
 // ─────────────────────────────────────────────────────────────
+// Handle Catalogue Order (FIXED ✅)
+// ─────────────────────────────────────────────────────────────
+
+const handleCatalogueOrder = async (from, session, catalogueOrder) => {
+  const items = catalogueOrder.product_items || [];
+
+  for (const item of items) {
+    // ✅ NEW: Catalogue mapping check
+    const productInfo = CATALOGUE_MAP[item.product_retailer_id];
+    
+    if (!productInfo) {
+      console.warn("⚠️ Unknown catalogue product:", item.product_retailer_id);
+      continue;
+    }
+
+    const existingIndex = session.cart.findIndex(
+      (c) => c.itemId === productInfo.id
+    );
+    
+    if (existingIndex >= 0) {
+      session.cart[existingIndex].quantity += item.quantity;
+    } else {
+      session.cart.push({
+        itemId:   productInfo.id,
+        name:     productInfo.name,
+        price:    productInfo.price,
+        quantity: item.quantity,
+        category: productInfo.category,
+      });
+    }
+  }
+
+  session.markModified("cart");
+  await session.save();
+
+  const total = session.cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const itemLines = session.cart
+    .map((i) => `• ${i.name} × ${i.quantity} = ₹${i.price * i.quantity}`)
+    .join("\n");
+
+  await sendButtons(
+    from,
+    `🛒 *Your Cart*\n─────────────────\n${itemLines}\n─────────────────\n💰 *Total: ₹${total}*\n\nReady to place your order?`,
+    [
+      { id: "PLACE_ORDER", title: "✅ Place Order" },
+      { id: "VIEW_MENU",   title: "➕ Add More"   },
+      { id: "EXIT",        title: "❌ Exit"        },
+    ]
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
 // Handle Message (Main Bot Logic)
 // ─────────────────────────────────────────────────────────────
 
-const handleMessage = async (from, messageBody, interactiveReply, locationData = null) => {
+const handleMessage = async (from, messageBody, interactiveReply, locationData = null, catalogueOrder = null) => {
   try {
     console.log("🔥 handleMessage started");
 
@@ -306,7 +403,13 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
 
     console.log("📥 Input:", input, "| State:", session.state, "| Step:", session.deliveryStep);
 
-    // ── EXIT ──────────────────────────────────────────────────
+    // ── CATALOGUE ORDER ────────────────────────────────────
+    if (catalogueOrder) {
+      await handleCatalogueOrder(from, session, catalogueOrder);
+      return;
+    }
+
+    // ── EXIT ──────────────────────────────────────────────
     if (["EXIT", "exit", "bye", "quit"].includes(input)) {
       session.state         = "WELCOME";
       session.cart          = [];
@@ -323,25 +426,25 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── UPI CONFIRMED ─────────────────────────────────────────
+    // ── UPI CONFIRMED ─────────────────────────────────────
     if (input === "UPI_DONE") {
       await confirmAndPlaceOrder(from, session, "UPI");
       return;
     }
 
-    // ── PAY COD ───────────────────────────────────────────────
+    // ── PAY COD ───────────────────────────────────────────
     if (input === "PAY_COD") {
       await confirmAndPlaceOrder(from, session, "COD");
       return;
     }
 
-    // ── PAY UPI → Show QR ─────────────────────────────────────
+    // ── PAY UPI → Show QR ─────────────────────────────────
     if (input === "PAY_UPI") {
       await sendUpiDetails(from, session);
       return;
     }
 
-    // ── ADD ONE MORE (increase last item quantity) ─────────────
+    // ── ADD ONE MORE ──────────────────────────────────────
     if (input === "ADD_MORE_QTY") {
       const lastItem = session.cart[session.cart.length - 1];
       if (lastItem) {
@@ -364,14 +467,13 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── REMOVE ONE (decrease last item quantity) ───────────────
+    // ── REMOVE ONE ────────────────────────────────────────
     if (input === "REMOVE_ONE_QTY") {
       const lastItem = session.cart[session.cart.length - 1];
       if (lastItem) {
         if (lastItem.quantity > 1) {
           lastItem.quantity -= 1;
         } else {
-          // Remove item from cart if quantity reaches 0
           session.cart.pop();
         }
         session.markModified("cart");
@@ -403,7 +505,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── LOCATION FLOW — Step 1: Location received → ask name ──
+    // ── LOCATION FLOW — Step 1 ────────────────────────────
     if (
       session.state === "COLLECT_DETAILS" &&
       session.deliveryStep === null &&
@@ -417,29 +519,22 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       session.markModified("deliveryData");
       await session.save();
 
-      await sendText(
-        from,
-        `📍 *Location received!*\n✅ Address saved.\n\n─────────────────\nPlease send your *full name:*`
-      );
+      await sendText(from, `📍 *Location received!*\n✅ Address saved.\n\n─────────────────\nPlease send your *full name:*`);
       return;
     }
 
-    // ── LOCATION FLOW — Step 2: Name received → ask phone ─────
+    // ── LOCATION FLOW — Step 2 ────────────────────────────
     if (session.state === "COLLECT_DETAILS" && session.deliveryStep === "phone") {
       const name = rawInput?.trim() || "Customer";
       session.deliveryData.name = name;
       session.deliveryStep      = "pincode";
       session.markModified("deliveryData");
       await session.save();
-
-      await sendText(
-        from,
-        `👤 *Name saved:* ${name}\n\n─────────────────\nNow please send your *10-digit mobile number:*`
-      );
+      await sendText(from, `👤 *Name saved:* ${name}\n\n─────────────────\nNow please send your *10-digit mobile number:*`);
       return;
     }
 
-    // ── LOCATION FLOW — Step 3: Phone received → ask pincode ──
+    // ── LOCATION FLOW — Step 3 ────────────────────────────
     if (session.state === "COLLECT_DETAILS" && session.deliveryStep === "pincode") {
       let phone = rawInput?.replace(/\D/g, "") || "";
       if (phone.length === 12 && phone.startsWith("91")) phone = phone.slice(2);
@@ -454,15 +549,11 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       session.deliveryStep       = "confirm";
       session.markModified("deliveryData");
       await session.save();
-
-      await sendText(
-        from,
-        `📞 *Phone saved:* +91 ${phone}\n\n─────────────────\nNow please send your *6-digit pincode:*`
-      );
+      await sendText(from, `📞 *Phone saved:* +91 ${phone}\n\n─────────────────\nNow please send your *6-digit pincode:*`);
       return;
     }
 
-    // ── LOCATION FLOW — Step 4: Pincode received → payment ────
+    // ── LOCATION FLOW — Step 4 ────────────────────────────
     if (session.state === "COLLECT_DETAILS" && session.deliveryStep === "confirm") {
       const pincode = rawInput?.replace(/\D/g, "") || "";
 
@@ -475,12 +566,11 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       session.deliveryStep         = null;
       session.markModified("deliveryData");
       await session.save();
-
       await askPaymentMethod(from, session);
       return;
     }
 
-    // ── TEXT FLOW — All details in one message ─────────────────
+    // ── TEXT FLOW — All details in one message ────────────
     if (
       session.state === "COLLECT_DETAILS" &&
       session.deliveryStep === null &&
@@ -550,20 +640,20 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       session.deliveryStep = null;
       session.markModified("deliveryData");
       await session.save();
-
       await askPaymentMethod(from, session);
       return;
     }
 
-    // ── GREETING ──────────────────────────────────────────────
+    // ── GREETING ───────────────────────────────────────────
     if (["hi", "hello", "hey", "start", "menu", "MAIN_MENU"].includes(input)) {
       session.state = "MAIN_MENU";
       await session.save();
+      await sendCatalogueMessage(from);
       await buildMainMenu(from);
       return;
     }
 
-    // ── VIEW MENU ─────────────────────────────────────────────
+    // ── VIEW MENU ─────────────────────────────────────────
     if (input === "VIEW_MENU") {
       session.state = "CATEGORY_MENU";
       await session.save();
@@ -571,7 +661,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── CONTACT ───────────────────────────────────────────────
+    // ── CONTACT ───────────────────────────────────────────
     if (input === "CONTACT") {
       await sendButtons(from, buildContactMessage(), [
         { id: "VIEW_MENU", title: "🍴 View Menu" },
@@ -580,7 +670,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── PAGINATION ────────────────────────────────────────────
+    // ── PAGINATION ────────────────────────────────────────
     if (input?.startsWith("MORE_")) {
       const parts       = input.split("_");
       const page        = parseInt(parts[parts.length - 1]);
@@ -591,7 +681,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── CATEGORY SELECT ───────────────────────────────────────
+    // ── CATEGORY SELECT ───────────────────────────────────
     if (input?.startsWith("CAT_")) {
       const categoryKey       = input.replace("CAT_", "").toLowerCase();
       session.currentCategory = categoryKey;
@@ -601,7 +691,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── ITEM SELECT → Add to Cart ─────────────────────────────
+    // ── ITEM SELECT → Add to Cart ─────────────────────────
     if (input?.startsWith("ITEM_")) {
       const itemId = input.replace("ITEM_", "");
       let foundItem = null, foundCategory = null;
@@ -640,7 +730,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
         await sendImage(from, foundItem.image, `${foundItem.name} — ₹${foundItem.price}`);
       }
 
-      // ✅ Show quantity controls after adding item
       await sendButtons(
         from,
         `✅ *${foundItem.name}* added to cart!\n\nQty: ${currentQty} × ₹${foundItem.price} = ₹${foundItem.price * currentQty}\n\n🛒 *Cart Total: ₹${total}*`,
@@ -653,7 +742,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── VIEW CART ─────────────────────────────────────────────
+    // ── VIEW CART ─────────────────────────────────────────
     if (input === "VIEW_CART" || input === "cart") {
       const cartMsg = buildCartMessage(session.cart);
       if (!session.cart || session.cart.length === 0) {
@@ -671,7 +760,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData =
       return;
     }
 
-    // ── PLACE ORDER ───────────────────────────────────────────
+    // ── PLACE ORDER ───────────────────────────────────────
     if (input === "PLACE_ORDER") {
       if (!session.cart || session.cart.length === 0) {
         await sendButtons(from, "🛒 Your cart is empty! Add items first.", [
@@ -707,7 +796,7 @@ Tap 📎 attachment → Location → Send Current Location`
       return;
     }
 
-    // ── FALLBACK ──────────────────────────────────────────────
+    // ── FALLBACK ──────────────────────────────────────────
     await sendButtons(
       from,
       `🤔 I didn't understand that.\n\nSend *hi* to start, or choose an option:`,
@@ -770,6 +859,7 @@ const receiveMessage = async (req, res) => {
     let messageBody      = null;
     let interactiveReply = null;
     let locationData     = null;
+    let catalogueOrder   = null;
 
     if (message.type === "text") {
       messageBody = message.text?.body || "";
@@ -781,6 +871,10 @@ const receiveMessage = async (req, res) => {
       } else if (ia.type === "list_reply") {
         interactiveReply = { id: ia.list_reply.id, title: ia.list_reply.title };
       }
+    }
+    else if (message.type === "order") {
+      catalogueOrder = message.order;
+      console.log("🛒 Catalogue order received:", JSON.stringify(catalogueOrder, null, 2));
     }
     else if (message.type === "location") {
       const loc    = message.location;
@@ -798,7 +892,7 @@ const receiveMessage = async (req, res) => {
       return;
     }
 
-    await handleMessage(from, messageBody, interactiveReply, locationData);
+    await handleMessage(from, messageBody, interactiveReply, locationData, catalogueOrder);
 
   } catch (err) {
     console.error("❌ receiveMessage Error:", err.message);

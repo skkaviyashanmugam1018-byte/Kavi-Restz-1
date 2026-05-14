@@ -47,6 +47,8 @@ router.post("/", async (req, res) => {
 
     let messageBody = "";
     let interactiveReply = null;
+    let locationData = null;
+    let catalogueOrder = null;
 
     // ── Text Message ─────────────────────────────
     if (msg.type === "text") {
@@ -55,16 +57,31 @@ router.post("/", async (req, res) => {
 
     // ── Interactive Button/List Reply ───────────
     else if (msg.type === "interactive") {
-
       // Button Reply
       if (msg.interactive?.type === "button_reply") {
         interactiveReply = msg.interactive.button_reply;
       }
-
       // List Reply
       if (msg.interactive?.type === "list_reply") {
         interactiveReply = msg.interactive.list_reply;
       }
+    }
+
+    // ── Catalogue Order ──────────────────────────
+    else if (msg.type === "order") {
+      catalogueOrder = msg.order;
+      console.log("🛒 Catalogue order received:", JSON.stringify(catalogueOrder, null, 2));
+    }
+
+    // ── Location ─────────────────────────────────
+    else if (msg.type === "location") {
+      const loc = msg.location;
+      locationData = {
+        lat: loc.latitude,
+        lng: loc.longitude,
+        address: loc.address || loc.name || `https://maps.google.com/?q=${loc.latitude},${loc.longitude}`,
+      };
+      console.log("📍 Location received:", locationData);
     }
 
     // ── Logs ────────────────────────────────────
@@ -74,13 +91,11 @@ router.post("/", async (req, res) => {
     console.log("⚡ Interactive:", interactiveReply);
 
     // ── Handle Bot Logic ────────────────────────
-    
-    await handleMessage(from, messageBody, interactiveReply);
+    await handleMessage(from, messageBody, interactiveReply, locationData, catalogueOrder);
 
     return res.sendStatus(200);
 
   } catch (err) {
-
     console.error("\n❌ Webhook Processing Error");
 
     if (err.response?.data) {
