@@ -1,39 +1,24 @@
-require("dotenv").config();
 const express = require("express");
-const cors = require("cors");
-const connectDB = require("./config/db");
+const mongoose = require("mongoose");
+require("dotenv").config();
+
+const webhookRoute = require("./routes/webhook");
+const flowRoute = require("./routes/flow");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-
-// Connect to MongoDB
-connectDB();
-
-// Middleware
-app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// MongoDB Connect
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ MongoDB Error:", err));
 
 // Routes
-app.use("/api/webhook", require("./routes/webhook"));
-app.use("/api/orders", require("./routes/orders"));
+app.use("/webhook", webhookRoute);
+app.use("/flow", flowRoute);
 
-// Health check
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "WhatsApp Food Bot",
-    timestamp: new Date().toISOString(),
-  });
-});
+app.get("/", (req, res) => res.send("🍛 Kavi Chettinadu Bot Running!"));
 
-// 404
-app.use((req, res) => {
-  res.status(404).json({ message: "Route not found" });
-});
-
-app.listen(PORT, () => {
-  console.log(`\n🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📡 Webhook URL: http://localhost:${PORT}/api/webhook`);
-  console.log(`📊 Orders API: http://localhost:${PORT}/api/orders\n`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

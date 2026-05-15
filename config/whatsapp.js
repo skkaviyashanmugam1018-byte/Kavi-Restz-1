@@ -1,128 +1,142 @@
 const axios = require("axios");
+require("dotenv").config();
 
-// ── URL is built at call time so .env loads first ───────────────────────────
-const getApiUrl = () =>
-  `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION || "v20.0"}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
-
-const headers = () => ({
-  Authorization: `Bearer ${process.env.WHATSAPP_API_TOKEN}`,
+const BASE_URL = `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`;
+const HEADERS = {
+  Authorization: `Bearer ${process.env.ACCESS_TOKEN}`,
   "Content-Type": "application/json",
-});
-
-// ── Debug helper — prints env values on every send ──────────────────────────
-const debugEnv = () => {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("🔍 PHONE_NUMBER_ID :", process.env.WHATSAPP_PHONE_NUMBER_ID  || "❌ MISSING");
-  console.log("🔍 API_TOKEN       :", process.env.WHATSAPP_API_TOKEN ? "✅ present" : "❌ MISSING");
-  console.log("🔍 API_URL         :", getApiUrl());
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 };
 
-// ── Send plain text message ──────────────────────────────────────────────────
-const sendText = async (to, text) => {
-  debugEnv();
-  console.log("📤 sendText →", to);
+// ─── Send plain text ──────────────────────────────────────
+async function sendText(to, text) {
+  await axios.post(
+    BASE_URL,
+    { messaging_product: "whatsapp", to, type: "text", text: { body: text } },
+    { headers: HEADERS }
+  );
+}
 
-  try {
-    const res = await axios.post(
-      getApiUrl(),
-      {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "text",
-        text: { preview_url: false, body: text },
-      },
-      { headers: headers() }
-    );
-    console.log("✅ sendText success:", res.data);
-    return res.data;
-  } catch (err) {
-    console.error("❌ sendText error:");
-    console.error(JSON.stringify(err.response?.data || err.message, null, 2));
-    throw err;
-  }
-};
-
-// ── Send interactive button message (max 3 buttons) ─────────────────────────
-const sendButtons = async (to, bodyText, buttons, headerText = null) => {
-  debugEnv();
-  console.log("📤 sendButtons →", to);
-  console.log("📤 Buttons:", buttons.map((b) => b.title));
-
-  try {
-    const payload = {
+// ─── Send reply buttons ───────────────────────────────────
+async function sendButtons(to, bodyText, buttons) {
+  await axios.post(
+    BASE_URL,
+    {
       messaging_product: "whatsapp",
-      recipient_type: "individual",
       to,
       type: "interactive",
       interactive: {
         type: "button",
         body: { text: bodyText },
         action: {
-          buttons: buttons.map((btn) => ({
+          buttons: buttons.map((b) => ({
             type: "reply",
-            reply: {
-              id:    btn.id,
-              title: btn.title.substring(0, 20),
-            },
+            reply: { id: b.id, title: b.title },
           })),
         },
       },
-    };
+    },
+    { headers: HEADERS }
+  );
+}
 
-    if (headerText) {
-      payload.interactive.header = { type: "text", text: headerText };
-    }
+// ─── Send list message (radio buttons) ───────────────────
+async function sendList(to, headerText, bodyText, buttonText, sections) {
+  await axios.post(
+    BASE_URL,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "list",
+        header: { type: "text", text: headerText },
+        body: { text: bodyText },
+        action: { button: buttonText, sections },
+      },
+    },
+    { headers: HEADERS }
+  );
+}
 
-    const res = await axios.post(getApiUrl(), payload, { headers: headers() });
-    console.log("✅ sendButtons success:", res.data);
-    return res.data;
-  } catch (err) {
-    console.error("❌ sendButtons error:");
-    console.error(JSON.stringify(err.response?.data || err.message, null, 2));
-    throw err;
-  }
-};
-
-// ── Send interactive list message ────────────────────────────────────────────
-const sendList = async (to, bodyText, buttonLabel, sections) => {
-  debugEnv();
-  console.log("📤 sendList →", to);
-
-  try {
-    const res = await axios.post(
-      getApiUrl(),
-      {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "interactive",
-        interactive: {
-          type: "list",
-          body: { text: bodyText },
-          action: {
-            button: buttonLabel,
-            sections: sections.map((section) => ({
-              title: section.title.substring(0, 24),
-              rows: section.rows.map((row) => ({
-                id:          row.id,
-                title:       row.title.substring(0, 24),
-                description: (row.description || "").substring(0, 72),
-              })),
-            })),
+// ─── Send WhatsApp Catalogue ──────────────────────────────
+async function sendCatalogue(to) {
+  await axios.post(
+    BASE_URL,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "catalog_message",
+        body: { text: "🍛 Browse our full Chettinadu menu!" },
+        footer: { text: "Tap an item to add to cart" },
+        action: {
+          name: "catalog_message",
+          parameters: {
+            thumbnail_product_retailer_id: "FIRST_PRODUCT_RETAILER_ID",
           },
         },
       },
-      { headers: headers() }
-    );
-    console.log("✅ sendList success:", res.data);
-    return res.data;
-  } catch (err) {
-    console.error("❌ sendList error:");
-    console.error(JSON.stringify(err.response?.data || err.message, null, 2));
-    throw err;
-  }
-};
+    },
+    { headers: HEADERS }
+  );
+}
 
-module.exports = { sendText, sendButtons, sendList };
+// ─── Send WhatsApp Flow (Delivery Details Form) ───────────
+async function sendDeliveryFlow(to, cartSummary) {
+  await axios.post(
+    BASE_URL,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "flow",
+        header: { type: "text", text: "📦 Delivery Details" },
+        body: { text: `${cartSummary}\n\nFill your delivery details below:` },
+        footer: { text: "Kavi Chettinadu Restaurant" },
+        action: {
+          name: "flow",
+          parameters: {
+            flow_message_version: "3",
+            flow_token: `delivery_${to}_${Date.now()}`,
+            flow_id: process.env.FLOW_ID,
+            flow_cta: "Enter Delivery Details",
+            flow_action: "navigate",
+            flow_action_payload: {
+              screen: "DELIVERY_SCREEN",
+              data: { cart_summary: cartSummary },
+            },
+          },
+        },
+      },
+    },
+    { headers: HEADERS }
+  );
+}
+
+// ─── Send Order Confirmation ──────────────────────────────
+async function sendOrderConfirmation(to, order) {
+  let itemsList = order.items
+    .map((i) => `• ${i.name} × ${i.quantity} = ₹${i.price * i.quantity}`)
+    .join("\n");
+
+  await sendText(
+    to,
+    `🎉 *ORDER PLACED!*\n\n📋 Order ID: #${order.orderId}\n\n*Items:*\n${itemsList}\n\n💰 Total: ₹${order.totalAmount}\n💳 Payment: ${order.paymentMethod}\n🏠 Address: ${order.address}\n\n⏱️ Est. Delivery: 30 mins\n\nThank you for ordering from Kavi Chettinadu! 🍛`
+  );
+
+  await sendButtons(to, "What would you like to do next?", [
+    { id: "order_again", title: "🔄 Order Again" },
+    { id: "exit", title: "❌ Exit" },
+  ]);
+}
+
+module.exports = {
+  sendText,
+  sendButtons,
+  sendList,
+  sendCatalogue,
+  sendDeliveryFlow,
+  sendOrderConfirmation,
+};

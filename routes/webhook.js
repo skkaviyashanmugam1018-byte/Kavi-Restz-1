@@ -104,7 +104,7 @@ router.post("/", async (req, res) => {
       console.error(err.message);
     }
 
-    return res.sendStatus(500);
+    return res.sendStatus(200);
   }
 });
 

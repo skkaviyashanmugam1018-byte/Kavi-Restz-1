@@ -126,9 +126,12 @@ const buildCategoryMenu = async (to) => {
     title:       val.label,
     description: `${val.items.length} items available`,
   }));
+
+  // ✅ FIX: Added missing bodyText parameter
   await sendList(
     to,
-    "🗂️ *Menu Categories*\n\nChoose a category to explore:",
+    "🗂️ *Menu Categories*",
+    "Choose a category to explore our Chettinadu menu:",
     "Browse Categories",
     [{ title: "Food Categories", rows: categoryRows }]
   );
@@ -168,9 +171,12 @@ const buildItemMenu = async (to, category, page = 0) => {
 
   const pageLabel = hasMore || hasPrev ? ` (Page ${page + 1})` : "";
   await sendImage(to, cat.image, `${cat.emoji} *${cat.label}*${pageLabel}`);
+
+  // ✅ FIX: Correct parameter order — headerText, bodyText, buttonText, sections
   await sendList(
     to,
-    `${cat.emoji} *${cat.label}*${pageLabel}\n\nSelect an item to add to your cart:`,
+    `${cat.emoji} *${cat.label}*${pageLabel}`,
+    "Select an item to add to your cart:",
     "Choose Item",
     [{ title: cat.label, rows }]
   );
@@ -330,16 +336,15 @@ Thank you for ordering with us! 🙏`,
 };
 
 // ─────────────────────────────────────────────────────────────
-// Handle Catalogue Order (FIXED ✅)
+// Handle Catalogue Order
 // ─────────────────────────────────────────────────────────────
 
 const handleCatalogueOrder = async (from, session, catalogueOrder) => {
   const items = catalogueOrder.product_items || [];
 
   for (const item of items) {
-    // ✅ NEW: Catalogue mapping check
     const productInfo = CATALOGUE_MAP[item.product_retailer_id];
-    
+
     if (!productInfo) {
       console.warn("⚠️ Unknown catalogue product:", item.product_retailer_id);
       continue;
@@ -348,7 +353,7 @@ const handleCatalogueOrder = async (from, session, catalogueOrder) => {
     const existingIndex = session.cart.findIndex(
       (c) => c.itemId === productInfo.id
     );
-    
+
     if (existingIndex >= 0) {
       session.cart[existingIndex].quantity += item.quantity;
     } else {
@@ -813,91 +818,4 @@ Tap 📎 attachment → Location → Send Current Location`
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// GET — Webhook Verification
-// ─────────────────────────────────────────────────────────────
-
-const verifyWebhook = (req, res) => {
-  const mode      = req.query["hub.mode"];
-  const token     = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  console.log("🔐 Webhook verification attempt");
-
-  if (mode === "subscribe" && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-    console.log("✅ Webhook verified");
-    return res.status(200).send(challenge);
-  }
-
-  console.error("❌ Webhook verification failed");
-  return res.sendStatus(403);
-};
-
-// ─────────────────────────────────────────────────────────────
-// POST — Receive Incoming Messages
-// ─────────────────────────────────────────────────────────────
-
-const receiveMessage = async (req, res) => {
-  res.sendStatus(200);
-
-  try {
-    const body = req.body;
-
-    if (body?.object !== "whatsapp_business_account") return;
-
-    const changes = body?.entry?.[0]?.changes?.[0]?.value;
-    if (changes?.statuses) { console.log("📬 Status update — ignored"); return; }
-
-    const message = changes?.messages?.[0];
-    if (!message) return;
-
-    const from = message.from;
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("📨 From:", from, "| Type:", message.type);
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-    let messageBody      = null;
-    let interactiveReply = null;
-    let locationData     = null;
-    let catalogueOrder   = null;
-
-    if (message.type === "text") {
-      messageBody = message.text?.body || "";
-    }
-    else if (message.type === "interactive") {
-      const ia = message.interactive;
-      if (ia.type === "button_reply") {
-        interactiveReply = { id: ia.button_reply.id, title: ia.button_reply.title };
-      } else if (ia.type === "list_reply") {
-        interactiveReply = { id: ia.list_reply.id, title: ia.list_reply.title };
-      }
-    }
-    else if (message.type === "order") {
-      catalogueOrder = message.order;
-      console.log("🛒 Catalogue order received:", JSON.stringify(catalogueOrder, null, 2));
-    }
-    else if (message.type === "location") {
-      const loc    = message.location;
-      locationData = {
-        lat:     loc.latitude,
-        lng:     loc.longitude,
-        address: loc.address || loc.name ||
-          `https://maps.google.com/?q=${loc.latitude},${loc.longitude}`,
-      };
-      messageBody = "__LOCATION__";
-      console.log("📍 Location received:", locationData);
-    }
-    else {
-      console.log("⚠️ Unsupported type:", message.type, "— ignored");
-      return;
-    }
-
-    await handleMessage(from, messageBody, interactiveReply, locationData, catalogueOrder);
-
-  } catch (err) {
-    console.error("❌ receiveMessage Error:", err.message);
-    if (err.response?.data) console.error(JSON.stringify(err.response.data, null, 2));
-  }
-};
-
-module.exports = { verifyWebhook, receiveMessage, handleMessage };
+module.exports = { handleMessage };

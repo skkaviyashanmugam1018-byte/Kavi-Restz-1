@@ -1,40 +1,26 @@
 const mongoose = require("mongoose");
 
-const orderSchema = new mongoose.Schema(
-  {
-    orderId: {
-      type: String,
-      unique: true,
-      default: () =>
-        "ORD" +
-        Date.now().toString().slice(-6) +
-        Math.random().toString(36).substring(2, 5).toUpperCase(),
+const orderSchema = new mongoose.Schema({
+  orderId: { type: String, unique: true },
+  phone: String,
+  name: String,
+  address: String,
+  pincode: String,
+  items: [
+    {
+      name: String,
+      price: Number,
+      quantity: Number,
     },
-    phoneNumber: { type: String, required: true },
-    items: [
-      {
-        itemId:   String,
-        name:     String,
-        price:    Number,
-        quantity: Number,
-        category: String,
-      },
-    ],
-    totalAmount: { type: Number, required: true },
-    deliveryDetails: {
-      name:    { type: String, default: "" },
-      phone:   { type: String, default: "" },
-      address: { type: String, default: "" },
-      pincode: { type: String, default: "" },
-    },
-    status: {
-      type: String,
-      enum: ["pending", "confirmed", "preparing", "delivered", "cancelled"],
-      default: "confirmed",
-    },
-    estimatedDelivery: { type: Number, default: 30 }, // minutes
+  ],
+  totalAmount: Number,
+  paymentMethod: { type: String, enum: ["UPI", "Cash on Delivery"] },
+  status: {
+    type: String,
+    enum: ["pending", "confirmed", "preparing", "delivered", "cancelled"],
+    default: "pending",
   },
-  { timestamps: true }
-);
+  createdAt: { type: Date, default: Date.now },
+});
 
 module.exports = mongoose.model("Order", orderSchema);

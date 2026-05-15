@@ -1,66 +1,47 @@
-const mongoose = require("mongoose");
+// In-memory session store (cart per user)
+const sessions = {};
 
-const cartItemSchema = new mongoose.Schema({
-  itemId:   String,
-  name:     String,
-  price:    Number,
-  quantity: { type: Number, default: 1 },
-  category: String,
-});
+function getSession(phone) {
+  if (!sessions[phone]) {
+    sessions[phone] = { cart: [], step: "start", name: "", address: "" };
+  }
+  return sessions[phone];
+}
 
-const sessionSchema = new mongoose.Schema(
-  {
-    phoneNumber: { type: String, required: true, unique: true },
-    state: {
-      type: String,
-      enum: [
-        "WELCOME",
-        "MAIN_MENU",
-        "CATEGORY_MENU",
-        "ITEM_MENU",
-        "CART",
-        "COLLECT_DETAILS",
-        "SELECT_PAYMENT",  // ✅ Added
-        "CONFIRM_UPI",     // ✅ Added
-        "ORDER_PLACED",
-        "CONTACT",
-      ],
-      default: "WELCOME",
-    },
-    currentCategory: { type: String, default: null },
-    cart: [cartItemSchema],
+function clearSession(phone) {
+  sessions[phone] = { cart: [], step: "start", name: "", address: "" };
+}
 
-    // Delivery detail collection
-    deliveryStep: {
-      type: String,
-      enum: [null, "name", "phone", "address", "pincode", "confirm"], // ✅ "confirm" added
-      default: null,
-    },
-    deliveryData: {
-      name:    { type: String, default: "" },
-      phone:   { type: String, default: "" },
-      address: { type: String, default: "" },
-      pincode: { type: String, default: "" },
-    },
+function addToCart(phone, item) {
+  const session = getSession(phone);
+  const existing = session.cart.find((i) => i.name === item.name);
+  if (existing) {
+    existing.quantity += 1;
+  } else {
+    session.cart.push({ ...item, quantity: 1 });
+  }
+}
 
-    // ✅ Payment method tracking
-    paymentMethod: {
-      type: String,
-      enum: [null, "COD", "UPI"],
-      default: null,
-    },
+function getCartTotal(phone) {
+  const session = getSession(phone);
+  return session.cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+}
 
-    lastActivity: { type: Date, default: Date.now },
-  },
-  { timestamps: true }
-);
+function getCartSummary(phone) {
+  const session = getSession(phone);
+  if (session.cart.length === 0) return "🛒 Cart is empty";
+  let text = "🛒 Your Cart:\n";
+  session.cart.forEach((i) => {
+    text += `• ${i.name} × ${i.quantity} = ₹${i.price * i.quantity}\n`;
+  });
+  text += `\n💰 *Total: ₹${getCartTotal(phone)}*`;
+  return text;
+}
 
-sessionSchema.methods.getCartTotal = function () {
-  return this.cart.reduce((total, item) => total + item.price * item.quantity, 0);
+module.exports = {
+  getSession,
+  clearSession,
+  addToCart,
+  getCartTotal,
+  getCartSummary,
 };
-
-sessionSchema.methods.clearCart = function () {
-  this.cart = [];
-};
-
-module.exports = mongoose.model("Session", sessionSchema);
