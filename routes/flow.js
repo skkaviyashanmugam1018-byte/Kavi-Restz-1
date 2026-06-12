@@ -364,3 +364,7 @@ router.post("/endpoint", async (req, res) => {
 });
 
 module.exports = router;
+
+// ── Note: After flow complete, bot sends payment options ──
+// This is handled in flow.js COMPLETE action
+// flow_token format: delivery_<phone>_<timestamp>

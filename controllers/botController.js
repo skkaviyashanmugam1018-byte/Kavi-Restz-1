@@ -4,8 +4,7 @@ const {
   sendText,
   sendButtons,
   sendList,
-  sendImage,
-  sendOrderFlow,
+  sendDeliveryFlow,
   sendOrderConfirmation,
 } = require("../config/whatsapp");
 
@@ -240,7 +239,7 @@ const MENU = {
 };
 
 // ─────────────────────────────────────────────────────────
-// HELPER: Find item by ID
+// HELPERS
 // ─────────────────────────────────────────────────────────
 function findItem(itemId) {
   for (const cat of Object.values(MENU)) {
@@ -252,28 +251,29 @@ function findItem(itemId) {
   return null;
 }
 
-// ─────────────────────────────────────────────────────────
-// HELPER: Build cart message
-// ─────────────────────────────────────────────────────────
 function buildCartMsg(cart) {
   if (!cart || cart.length === 0) return "🛒 Your cart is empty!";
   let msg = "🛒 *Your Cart*\n─────────────────\n";
   cart.forEach((item, i) => {
-    msg += `${i + 1}. ${item.name}\n   ${item.qty} × ₹${item.price} = ₹${item.price * item.qty}\n`;
+    msg += `${i + 1}. ${item.name}\n   ${item.qty} × Rs.${item.price} = Rs.${item.price * item.qty}\n`;
   });
   const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  msg += `─────────────────\n💰 *Total: ₹${total}*`;
+  msg += `─────────────────\n💰 *Total: Rs.${total}*`;
   return msg;
 }
 
+function buildCartSummary(cart) {
+  return cart.map((i) => `${i.name} x${i.qty}`).join(", ");
+}
+
 // ─────────────────────────────────────────────────────────
-// SEND: Main Menu Categories
+// SEND: Main Menu
 // ─────────────────────────────────────────────────────────
 async function sendMainMenu(to) {
   const rows = Object.entries(MENU).map(([key, cat]) => ({
     id: `CAT_${key}`,
     title: cat.label,
-    description: `Tap to browse`,
+    description: "Tap to browse",
   }));
   await sendList(
     to,
@@ -295,17 +295,11 @@ async function sendSubcategories(to, catKey) {
     title: sub.label,
     description: `${sub.items.length} items`,
   }));
-  await sendList(
-    to,
-    cat.label,
-    "Select a subcategory:",
-    "View Items",
-    [{ title: cat.label, rows }]
-  );
+  await sendList(to, cat.label, "Select a subcategory:", "View Items", [{ title: cat.label, rows }]);
 }
 
 // ─────────────────────────────────────────────────────────
-// SEND: Items list
+// SEND: Items
 // ─────────────────────────────────────────────────────────
 async function sendItems(to, catKey, subKey) {
   const sub = MENU[catKey]?.subcategories[subKey];
@@ -315,17 +309,11 @@ async function sendItems(to, catKey, subKey) {
     title: item.name,
     description: `Rs.${item.price}`,
   }));
-  await sendList(
-    to,
-    sub.label,
-    "Select an item to add to cart:",
-    "Choose Item",
-    [{ title: sub.label, rows }]
-  );
+  await sendList(to, sub.label, "Select an item to add to cart:", "Choose Item", [{ title: sub.label, rows }]);
 }
 
 // ─────────────────────────────────────────────────────────
-// SEND: Quantity selection
+// SEND: Quantity
 // ─────────────────────────────────────────────────────────
 async function sendQuantitySelect(to, item) {
   await sendButtons(
@@ -356,21 +344,6 @@ async function sendAfterAddToCart(to, cart) {
 }
 
 // ─────────────────────────────────────────────────────────
-// SEND: Order type
-// ─────────────────────────────────────────────────────────
-async function sendOrderType(to) {
-  await sendButtons(
-    to,
-    "🚚 *Select Order Type:*",
-    [
-      { id: "OT_DELIVERY", title: "🚚 Home Delivery" },
-      { id: "OT_TAKEAWAY", title: "🥡 Take Away" },
-      { id: "OT_DINE_IN", title: "🍽️ Dine In" },
-    ]
-  );
-}
-
-// ─────────────────────────────────────────────────────────
 // SEND: Payment method
 // ─────────────────────────────────────────────────────────
 async function sendPaymentMethod(to, total) {
@@ -381,43 +354,6 @@ async function sendPaymentMethod(to, total) {
       { id: "PAY_COD", title: "💵 Cash on Delivery" },
       { id: "PAY_UPI", title: "📲 UPI Payment" },
       { id: "PAY_CARD", title: "💳 Card Payment" },
-    ]
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// SEND: Order Summary
-// ─────────────────────────────────────────────────────────
-async function sendOrderSummary(to, session) {
-  const cart = session.cart;
-  const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const { name, phone, address, orderType, paymentMethod } = session.deliveryData;
-
-  const itemsList = cart.map((i) => `• ${i.name} x${i.qty} = Rs.${i.price * i.qty}`).join("\n");
-
-  const orderTypeLabel =
-    orderType === "OT_DELIVERY" ? "🚚 Home Delivery" :
-    orderType === "OT_TAKEAWAY" ? "🥡 Take Away" : "🍽️ Dine In";
-
-  const payLabel =
-    paymentMethod === "PAY_COD" ? "💵 Cash on Delivery" :
-    paymentMethod === "PAY_UPI" ? "📲 UPI Payment" : "💳 Card Payment";
-
-  await sendButtons(
-    to,
-    `📋 *Order Summary*\n─────────────────\n` +
-    `👤 *Name:* ${name}\n` +
-    `📞 *Phone:* ${phone}\n` +
-    `🚚 *Type:* ${orderTypeLabel}\n` +
-    `🏠 *Address:* ${address || "N/A"}\n` +
-    `💳 *Payment:* ${payLabel}\n` +
-    `─────────────────\n` +
-    `*Items:*\n${itemsList}\n` +
-    `─────────────────\n` +
-    `💰 *Total: Rs.${total}*\n\nConfirm your order?`,
-    [
-      { id: "CONFIRM_ORDER", title: "✅ Confirm Order" },
-      { id: "MODIFY_ORDER", title: "✏️ Modify Order" },
     ]
   );
 }
@@ -439,7 +375,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
     const input = interactiveReply?.id || messageBody?.trim()?.toLowerCase();
     const rawInput = messageBody?.trim();
 
-    console.log(`📥 From: ${from} | Input: ${input} | State: ${session.state} | Step: ${session.deliveryStep}`);
+    console.log(`📥 From: ${from} | Input: ${input} | State: ${session.state}`);
 
     // ── EXIT ──────────────────────────────────────────────
     if (["exit", "bye", "quit"].includes(input)) {
@@ -526,7 +462,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       const qty = parseInt(withoutPrefix.substring(0, sepIdx));
       const itemId = withoutPrefix.substring(sepIdx + 3);
       const item = findItem(itemId) || session.pendingItem;
-
       if (!item) { await sendText(from, "❌ Error. Please try again."); return; }
 
       const existing = session.cart.findIndex((c) => c.itemId === item.id);
@@ -573,117 +508,30 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── PLACE ORDER ───────────────────────────────────────
+    // ── PLACE ORDER → WhatsApp Flow Popup ────────────────
     if (["PLACE_ORDER", "PLACE_ORDER_FLOW"].includes(input)) {
       if (!session.cart || session.cart.length === 0) {
-        await sendButtons(from, "❌ Your cart is empty!", [{ id: "BROWSE_MENU", title: "🍴 Browse Menu" }]);
+        await sendButtons(from, "❌ Your cart is empty!", [
+          { id: "BROWSE_MENU", title: "🍴 Browse Menu" },
+        ]);
         return;
       }
-      session.state = "COLLECT_DETAILS";
-      session.deliveryStep = "name";
-      session.deliveryData = {};
-      session.markModified("deliveryData");
+      session.state = "AWAITING_FLOW";
       await session.save();
-      await sendText(from, "📝 *Let's confirm your details!*\n\n👤 Please enter your *full name:*");
-      return;
-    }
 
-    // ── COLLECT: Name ─────────────────────────────────────
-    if (session.state === "COLLECT_DETAILS" && session.deliveryStep === "name") {
-      session.deliveryData.name = rawInput || "Customer";
-      session.deliveryStep = "phone";
-      session.markModified("deliveryData");
-      await session.save();
-      await sendText(from, `✅ Name: *${session.deliveryData.name}*\n\n📞 Please enter your *phone number:*`);
-      return;
-    }
-
-    // ── COLLECT: Phone ────────────────────────────────────
-    if (session.state === "COLLECT_DETAILS" && session.deliveryStep === "phone") {
-      let phone = rawInput?.replace(/\D/g, "") || "";
-      if (phone.length === 12 && phone.startsWith("91")) phone = phone.slice(2);
-      if (!/^\d{10}$/.test(phone)) {
-        await sendText(from, "❌ Invalid number. Please enter a valid *10-digit mobile number:*");
-        return;
-      }
-      session.deliveryData.phone = phone;
-      session.deliveryStep = "order_type";
-      session.markModified("deliveryData");
-      await session.save();
-      await sendOrderType(from);
-      return;
-    }
-
-    // ── ORDER TYPE ────────────────────────────────────────
-    if (["OT_DELIVERY", "OT_TAKEAWAY", "OT_DINE_IN"].includes(input)) {
-      session.deliveryData.orderType = input;
-      session.markModified("deliveryData");
-
-      if (input === "OT_DELIVERY") {
-        session.deliveryStep = "address";
-        await session.save();
-        await sendButtons(
-          from,
-          "🏠 *Delivery Address*\n\nHow would you like to share your address?",
-          [
-            { id: "ADDR_LOCATION", title: "📍 Share Location" },
-            { id: "ADDR_MANUAL", title: "✏️ Enter Manually" },
-          ]
-        );
-      } else {
-        session.deliveryData.address = input === "OT_TAKEAWAY" ? "Takeaway - Pick up at restaurant" : "Dine In";
-        session.deliveryStep = "payment";
-        await session.save();
-        const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
-        await sendPaymentMethod(from, total);
-      }
-      return;
-    }
-
-    // ── ADDRESS: Location ─────────────────────────────────
-    if (input === "ADDR_LOCATION") {
-      await sendText(from, "📍 Please share your *live location* using WhatsApp attachment (📎) → Location");
-      return;
-    }
-
-    if (locationData && session.state === "COLLECT_DETAILS") {
-      const addr = locationData.address || `https://maps.google.com/?q=${locationData.lat},${locationData.lng}`;
-      session.deliveryData.address = addr;
-      session.deliveryStep = "payment";
-      session.markModified("deliveryData");
-      await session.save();
+      // Build cart summary for flow
+      const cartSummary = buildCartSummary(session.cart);
       const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
-      await sendText(from, "✅ Location saved!");
-      await sendPaymentMethod(from, total);
+
+      // Send WhatsApp Flow popup
+      await sendDeliveryFlow(from, cartSummary, total);
       return;
     }
 
-    // ── ADDRESS: Manual ───────────────────────────────────
-    if (input === "ADDR_MANUAL") {
-      session.deliveryStep = "address_manual";
-      await session.save();
-      await sendText(from, "✏️ Please enter your *full delivery address:*\n_(House No, Street, Area, Landmark, Pincode)_");
-      return;
-    }
-
-    if (session.state === "COLLECT_DETAILS" && session.deliveryStep === "address_manual") {
-      session.deliveryData.address = rawInput || "";
-      session.deliveryStep = "payment";
-      session.markModified("deliveryData");
-      await session.save();
-      const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
-      await sendText(from, "✅ Address saved!");
-      await sendPaymentMethod(from, total);
-      return;
-    }
-
-    // ── PAYMENT ───────────────────────────────────────────
+    // ── PAYMENT (after flow complete) ─────────────────────
     if (["PAY_COD", "PAY_UPI", "PAY_CARD"].includes(input)) {
       session.deliveryData.paymentMethod = input;
-      session.state = "ORDER_SUMMARY";
-      session.deliveryStep = null;
       session.markModified("deliveryData");
-      await session.save();
 
       if (input === "PAY_UPI") {
         const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
@@ -700,89 +548,16 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         await sendText(from, "💳 *Card payment will be collected at delivery/counter.*");
       }
 
-      await sendOrderSummary(from, session);
+      await placeOrder(from, session);
       return;
     }
 
     // ── UPI DONE ──────────────────────────────────────────
     if (input === "UPI_DONE") {
       session.deliveryData.paymentMethod = "PAY_UPI";
-      session.state = "ORDER_SUMMARY";
       session.markModified("deliveryData");
       await session.save();
-      await sendOrderSummary(from, session);
-      return;
-    }
-
-    // ── MODIFY ORDER ──────────────────────────────────────
-    if (input === "MODIFY_ORDER") {
-      session.state = "CART";
-      await session.save();
-      await sendButtons(from, buildCartMsg(session.cart), [
-        { id: "ADD_MORE", title: "➕ Add More" },
-        { id: "CLEAR_CART", title: "🗑️ Clear Cart" },
-        { id: "PLACE_ORDER", title: "✅ Place Order" },
-      ]);
-      return;
-    }
-
-    // ── CONFIRM ORDER ─────────────────────────────────────
-    if (input === "CONFIRM_ORDER") {
-      const { name, phone, address, orderType, paymentMethod } = session.deliveryData;
-      const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
-      const orderId = "KAV" + Date.now();
-
-      const orderTypeLabel =
-        orderType === "OT_DELIVERY" ? "Home Delivery" :
-        orderType === "OT_TAKEAWAY" ? "Take Away" : "Dine In";
-
-      const payLabel =
-        paymentMethod === "PAY_COD" ? "Cash on Delivery" :
-        paymentMethod === "PAY_UPI" ? "UPI Payment" : "Card Payment";
-
-      const newOrder = new Order({
-        orderId,
-        phone: phone || from,
-        name: name || "Customer",
-        address: address || orderTypeLabel,
-        items: session.cart.map((i) => ({ name: i.name, price: i.price, quantity: i.qty })),
-        totalAmount: total,
-        paymentMethod: payLabel,
-        status: "confirmed",
-      });
-      await newOrder.save();
-      console.log(`✅ Order: ${orderId} | Total: Rs.${total}`);
-
-      // Reset session
-      session.cart = [];
-      session.deliveryData = {};
-      session.deliveryStep = null;
-      session.state = "WELCOME";
-      session.markModified("cart");
-      session.markModified("deliveryData");
-      await session.save();
-
-      const itemsList = newOrder.items.map((i) => `• ${i.name} x${i.quantity} = Rs.${i.price * i.quantity}`).join("\n");
-
-      await sendButtons(
-        from,
-        `🎉 *Order Placed Successfully!*\n\n` +
-        `📋 *Order ID:* #${orderId}\n` +
-        `─────────────────\n` +
-        `*Items:*\n${itemsList}\n` +
-        `─────────────────\n` +
-        `💰 *Total: Rs.${total}*\n` +
-        `💳 *Payment:* ${payLabel}\n` +
-        `🚚 *Type:* ${orderTypeLabel}\n` +
-        `🏠 *Address:* ${address || orderTypeLabel}\n` +
-        `─────────────────\n` +
-        `⏱️ *Estimated Time:* 30-45 mins\n\n` +
-        `Thank you for ordering from Kavi Chettinadu! 🙏`,
-        [
-          { id: "BROWSE_MENU", title: "🔄 Order Again" },
-          { id: "exit", title: "❌ Exit" },
-        ]
-      );
+      await placeOrder(from, session);
       return;
     }
 
@@ -802,4 +577,68 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
   }
 };
 
-module.exports = { handleMessage };
+// ─────────────────────────────────────────────────────────
+// PLACE ORDER (called after flow complete)
+// ─────────────────────────────────────────────────────────
+async function placeOrder(from, session) {
+  const { name, phone, address, orderType, paymentMethod } = session.deliveryData;
+  const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const orderId = "KAV" + Date.now();
+
+  const orderTypeLabel =
+    orderType === "delivery" ? "🚚 Home Delivery" :
+    orderType === "takeaway" ? "🥡 Take Away" : "🍽️ Dine In";
+
+  const payLabel =
+    paymentMethod === "PAY_COD" ? "💵 Cash on Delivery" :
+    paymentMethod === "PAY_UPI" ? "📲 UPI Payment" : "💳 Card Payment";
+
+  // Save to MongoDB
+  const newOrder = new Order({
+    orderId,
+    phone: phone || from,
+    name: name || "Customer",
+    address: address || orderTypeLabel,
+    items: session.cart.map((i) => ({ name: i.name, price: i.price, quantity: i.qty })),
+    totalAmount: total,
+    paymentMethod: payLabel,
+    status: "confirmed",
+  });
+  await newOrder.save();
+  console.log(`✅ Order: ${orderId} | Total: Rs.${total}`);
+
+  // Reset session
+  session.cart = [];
+  session.deliveryData = {};
+  session.deliveryStep = null;
+  session.state = "WELCOME";
+  session.markModified("cart");
+  session.markModified("deliveryData");
+  await session.save();
+
+  const itemsList = newOrder.items
+    .map((i) => `• ${i.name} × ${i.quantity} = Rs.${i.price * i.quantity}`)
+    .join("\n");
+
+  await sendButtons(
+    from,
+    `🎉 *Order Placed Successfully!*\n\n` +
+    `📋 *Order ID:* #${orderId}\n` +
+    `─────────────────\n` +
+    `*Items:*\n${itemsList}\n` +
+    `─────────────────\n` +
+    `💰 *Total: Rs.${total}*\n` +
+    `💳 *Payment:* ${payLabel}\n` +
+    `🚚 *Type:* ${orderTypeLabel}\n` +
+    `🏠 *Address:* ${address || orderTypeLabel}\n` +
+    `─────────────────\n` +
+    `⏱️ *Estimated Time:* 30-45 mins\n\n` +
+    `Thank you for ordering from Kavi Chettinadu! 🙏`,
+    [
+      { id: "BROWSE_MENU", title: "🔄 Order Again" },
+      { id: "exit", title: "❌ Exit" },
+    ]
+  );
+}
+
+module.exports = { handleMessage, placeOrder };
