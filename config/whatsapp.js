@@ -117,7 +117,7 @@ async function sendCatalogueMessage(to) {
           action: {
             name: "catalog_message",
             parameters: {
-              thumbnail_product_retailer_id: "BIRY002",
+              thumbnail_product_retailer_id: "GRILL001", // ✅ FIXED — valid Content ID from your catalog
             },
           },
         },
@@ -128,7 +128,7 @@ async function sendCatalogueMessage(to) {
     return true;
   } catch (err) {
     console.error("❌ sendCatalogueMessage error:", err.response?.data || err.message);
-    return false; // ✅ Return false so caller can fallback
+    return false;
   }
 }
 
@@ -185,8 +185,8 @@ async function sendOrderConfirmation(to, order) {
       .join("\n");
 
     const paymentLabel =
-      order.paymentMethod === "UPI Payment" ? "📲 UPI Payment" :
-      order.paymentMethod === "Card Payment" ? "💳 Card Payment" : "💵 Cash on Delivery";
+      order.paymentMethod === "UPI Payment"  ? "📲 UPI Payment"      :
+      order.paymentMethod === "Card Payment" ? "💳 Card Payment"     : "💵 Cash on Delivery";
 
     await sendText(
       to,
