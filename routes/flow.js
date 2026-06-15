@@ -43,6 +43,10 @@ function encryptResponse(response, aesKey, iv) {
   return encrypted.toString("base64");
 }
 
+// ── Pricing Config ────────────────────────────────────────
+const DELIVERY_CHARGE = 30;
+const GST_PERCENT     = 5;
+
 // ── Addon price map ───────────────────────────────────────
 const ADDON_PRICES = {
   raita:       { name: "Raita",         price: 30 },
@@ -58,6 +62,7 @@ const ADDON_PRICES = {
 router.post("/endpoint", async (req, res) => {
   try {
     const body = req.body;
+    console.log("📩 Flow endpoint hit | action:", body?.action || "encrypted");
 
     // Unencrypted Ping
     if (body?.action === "ping") {
@@ -67,6 +72,7 @@ router.post("/endpoint", async (req, res) => {
 
     // Missing encrypted fields
     if (!body?.encrypted_aes_key || !body?.encrypted_flow_data || !body?.initial_vector) {
+      console.log("⚠️ No encrypted fields — returning active");
       return res.status(200).json({ data: { status: "active" } });
     }
 
@@ -80,7 +86,7 @@ router.post("/endpoint", async (req, res) => {
     }
 
     const { flow_token, data, action, screen } = decryptedBody;
-    console.log("📩 Flow:", JSON.stringify({ action, screen, flow_token }, null, 2));
+    console.log("📩 Flow decrypted:", JSON.stringify({ action, screen, flow_token }, null, 2));
 
     // Encrypted Ping
     if (action === "ping") {
@@ -89,26 +95,75 @@ router.post("/endpoint", async (req, res) => {
       );
     }
 
-    // ✅ FIX: Always use phone from flow_token (reliable — set by us when sending flow)
-    // flow_token format: "delivery_917904307757_1735123456789"
+    // Phone from flow_token — format: "delivery_917904307757_timestamp"
     const tokenParts = (flow_token || "").split("_");
     const phone = tokenParts.length >= 2 ? tokenParts[1] : null;
     console.log(`📞 Phone from flow_token: ${phone}`);
 
-    // ── DELIVERY_DETAILS → ADDONS_SELECT ─────────────────
-    if (screen === "DELIVERY_DETAILS") {
+    // ── ADDRESS_STEP1 → ADDRESS_STEP2 ────────────────────
+    if (screen === "ADDRESS_STEP1") {
+      console.log("📋 ADDRESS_STEP1 → ADDRESS_STEP2");
+      return res.status(200).send(
+        encryptResponse({
+          screen: "ADDRESS_STEP2",
+          data: {
+            customer_name:  data.customer_name  || "",
+            customer_phone: data.customer_phone || "",
+            door_no:        data.door_no        || "",
+            street:         data.street         || "",
+            landmark:       data.landmark       || "",
+            area:           data.area           || "",
+            cart_summary:   data.cart_summary   || "",
+            total_amount:   data.total_amount   || "",
+          }
+        }, aesKey, iv)
+      );
+    }
+
+    // ── ADDRESS_STEP2 → ORDER_TYPE ────────────────────────
+    if (screen === "ADDRESS_STEP2") {
+      console.log("📋 ADDRESS_STEP2 → ORDER_TYPE");
+      return res.status(200).send(
+        encryptResponse({
+          screen: "ORDER_TYPE",
+          data: {
+            customer_name:  data.customer_name  || "",
+            customer_phone: data.customer_phone || "",
+            door_no:        data.door_no        || "",
+            street:         data.street         || "",
+            landmark:       data.landmark       || "",
+            area:           data.area           || "",
+            city:           data.city           || "",
+            district:       data.district       || "",
+            pincode:        data.pincode        || "",
+            cart_summary:   data.cart_summary   || "",
+            total_amount:   data.total_amount   || "",
+          }
+        }, aesKey, iv)
+      );
+    }
+
+    // ── ORDER_TYPE → ADDONS_SELECT ────────────────────────
+    if (screen === "ORDER_TYPE") {
+      console.log("📋 ORDER_TYPE → ADDONS_SELECT");
       return res.status(200).send(
         encryptResponse({
           screen: "ADDONS_SELECT",
           data: {
-            customer_name:    data.customer_name    || "",
-            customer_phone:   data.customer_phone   || "",
-            order_type:       data.order_type       || "delivery",
-            delivery_address: data.delivery_address || "",
-            delivery_time:    data.delivery_time    || "asap",
-            scheduled_time:   data.scheduled_time   || "",
-            cart_summary:     data.cart_summary     || "",
-            total_amount:     data.total_amount     || "",
+            customer_name:  data.customer_name  || "",
+            customer_phone: data.customer_phone || "",
+            door_no:        data.door_no        || "",
+            street:         data.street         || "",
+            landmark:       data.landmark       || "",
+            area:           data.area           || "",
+            city:           data.city           || "",
+            district:       data.district       || "",
+            pincode:        data.pincode        || "",
+            order_type:     data.order_type     || "delivery",
+            delivery_time:  data.delivery_time  || "asap",
+            scheduled_time: data.scheduled_time || "",
+            cart_summary:   data.cart_summary   || "",
+            total_amount:   data.total_amount   || "",
           }
         }, aesKey, iv)
       );
@@ -116,6 +171,17 @@ router.post("/endpoint", async (req, res) => {
 
     // ── ADDONS_SELECT → ORDER_SUMMARY ─────────────────────
     if (screen === "ADDONS_SELECT") {
+      console.log("📋 ADDONS_SELECT → ORDER_SUMMARY");
+      const baseTotal      = parseFloat(String(data.total_amount || "0").replace(/[^0-9.]/g, "")) || 0;
+      const addonList      = Array.isArray(data.selected_addons) ? data.selected_addons : [];
+      const addonItems     = addonList.map((id) => ADDON_PRICES[id]).filter(Boolean);
+      const addonTotal     = addonItems.reduce((s, a) => s + a.price, 0);
+      const isDelivery     = (data.order_type || "delivery") === "delivery";
+      const deliveryCharge = isDelivery ? DELIVERY_CHARGE : 0;
+      const subtotal       = baseTotal + addonTotal + deliveryCharge;
+      const gstAmount      = Math.round(subtotal * GST_PERCENT / 100);
+      const grandTotal     = subtotal + gstAmount;
+
       return res.status(200).send(
         encryptResponse({
           screen: "ORDER_SUMMARY",
@@ -123,6 +189,10 @@ router.post("/endpoint", async (req, res) => {
             ...data,
             selected_addons:      data.selected_addons      || [],
             special_instructions: data.special_instructions || "",
+            addon_total:          `Rs.${addonTotal}`,
+            delivery_charge:      isDelivery ? `Rs.${deliveryCharge}` : "Free",
+            gst_amount:           `Rs.${gstAmount} (${GST_PERCENT}% GST)`,
+            grand_total:          `Rs.${grandTotal}`,
           }
         }, aesKey, iv)
       );
@@ -130,52 +200,69 @@ router.post("/endpoint", async (req, res) => {
 
     // ── COMPLETE → Save session + Send payment options ────
     if (action === "complete") {
+      console.log("✅ Flow COMPLETE received!");
+      console.log("📦 Flow data:", JSON.stringify(data, null, 2));
+
       const {
         customer_name, customer_phone,
-        delivery_address, order_type,
-        delivery_time, scheduled_time,
+        door_no, street, landmark, area, city, district, pincode,
+        order_type, delivery_time, scheduled_time,
         selected_addons, special_instructions,
         total_amount,
       } = data;
 
-      // ✅ FIX: Use phone from flow_token — NOT from form input
-      // User may type 9585960612 (without 91), but session stored as 919585960612
-      const sessionPhone = phone; // from flow_token — always correct
+      // Build full address
+      const delivery_address = [
+        door_no,
+        street,
+        landmark ? `Near ${landmark}` : null,
+        area,
+        city,
+        district || null,
+        pincode ? `- ${pincode}` : null,
+      ].filter(Boolean).join(", ");
 
-      // Calculate addon prices
-      const addonList  = Array.isArray(selected_addons) ? selected_addons : [];
-      const addonItems = addonList.map((id) => ADDON_PRICES[id]).filter(Boolean);
-      const addonTotal = addonItems.reduce((s, a) => s + a.price, 0);
-      const baseTotal  = parseFloat(String(total_amount || "0").replace(/[^0-9.]/g, "")) || 0;
-      const grandTotal = baseTotal + addonTotal;
+      const sessionPhone = phone;
 
-      // Addon text
+      // Calculate pricing
+      const baseTotal      = parseFloat(String(total_amount || "0").replace(/[^0-9.]/g, "")) || 0;
+      const addonList      = Array.isArray(selected_addons) ? selected_addons : [];
+      const addonItems     = addonList.map((id) => ADDON_PRICES[id]).filter(Boolean);
+      const addonTotal     = addonItems.reduce((s, a) => s + a.price, 0);
+      const isDelivery     = order_type === "delivery";
+      const deliveryCharge = isDelivery ? DELIVERY_CHARGE : 0;
+      const subtotal       = baseTotal + addonTotal + deliveryCharge;
+      const gstAmount      = Math.round(subtotal * GST_PERCENT / 100);
+      const grandTotal     = subtotal + gstAmount;
+
+      console.log(`💰 base=${baseTotal} addons=${addonTotal} delivery=${deliveryCharge} gst=${gstAmount} grand=${grandTotal}`);
+
       const addonText = addonItems.length > 0
         ? addonItems.map((a) => `${a.name} (Rs.${a.price})`).join(", ")
         : "None";
 
-      // Time text
       const timeText = delivery_time === "schedule" && scheduled_time
         ? `📅 Scheduled: ${scheduled_time}`
-        : "⚡ ASAP (30-45 mins)";
+        : "⚡ ASAP (30–45 mins)";
 
-      // Order type label
       const orderTypeLabel =
         order_type === "delivery" ? "🚚 Home Delivery" :
         order_type === "takeaway" ? "🥡 Take Away"     : "🍽️ Dine In";
 
-      // ✅ Update session using flow_token phone
+      // Update session
       let session = await Session.findOne({ phoneNumber: sessionPhone });
       if (session) {
         session.deliveryData = {
           name:                 customer_name     || "Customer",
           phone:                customer_phone    || sessionPhone,
-          address:              delivery_address  || "",
+          address:              delivery_address,
           order_type,
           delivery_time,
           scheduled_time,
           addons:               addonItems,
           addon_total:          addonTotal,
+          delivery_charge:      deliveryCharge,
+          gst_amount:           gstAmount,
           special_instructions,
           grand_total:          grandTotal,
         };
@@ -187,23 +274,26 @@ router.post("/endpoint", async (req, res) => {
         console.error(`❌ Session not found for phone: ${sessionPhone}`);
       }
 
-      // ✅ Send payment options to flow_token phone
+      // Send payment options
       if (sessionPhone) {
         try {
           await sendButtons(
             sessionPhone,
-            `✅ *Order details saved!*\n\n` +
-            `👤 *Name:* ${customer_name}\n` +
+            `🧾 *Order Bill Summary*\n\n` +
+            `👤 *Customer:* ${customer_name}\n` +
             `📞 *Phone:* ${customer_phone}\n` +
+            `📍 *Address:* ${delivery_address}\n` +
             `🚚 *Type:* ${orderTypeLabel}\n` +
-            `🏠 *Address:* ${delivery_address || "N/A"}\n` +
             `⏰ *Time:* ${timeText}\n` +
             `🍱 *Add-ons:* ${addonText}\n` +
             `📝 *Note:* ${special_instructions || "None"}\n` +
             `─────────────────\n` +
             `🛒 *Items:* Rs.${baseTotal}\n` +
             (addonTotal > 0 ? `🍱 *Add-ons:* Rs.${addonTotal}\n` : "") +
-            `💰 *Grand Total: Rs.${grandTotal}*\n\n` +
+            `🚚 *Delivery:* ${isDelivery ? `Rs.${deliveryCharge}` : "Free"}\n` +
+            `📊 *GST (${GST_PERCENT}%):* Rs.${gstAmount}\n` +
+            `─────────────────\n` +
+            `💰 *Total: Rs.${grandTotal}*\n\n` +
             `Select payment method:`,
             [
               { id: "PAY_COD",  title: "💵 Cash on Delivery" },
@@ -213,7 +303,7 @@ router.post("/endpoint", async (req, res) => {
           );
           console.log(`✅ Payment options sent to ${sessionPhone}`);
         } catch (msgErr) {
-          console.error("❌ Payment options send error:", msgErr.message);
+          console.error("❌ Payment send error:", msgErr.message);
         }
       }
 
@@ -225,7 +315,7 @@ router.post("/endpoint", async (req, res) => {
       );
     }
 
-    // Default
+    console.log("⚠️ Unhandled flow:", { action, screen });
     return res.status(200).send(
       encryptResponse({ data: { status: "active" } }, aesKey, iv)
     );

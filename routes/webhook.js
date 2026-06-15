@@ -12,7 +12,6 @@ router.get("/", (req, res) => {
     console.log("✅ Webhook verified by Meta");
     return res.status(200).send(challenge);
   }
-
   console.log("❌ Webhook verification failed");
   return res.sendStatus(403);
 });
@@ -38,40 +37,30 @@ router.post("/", async (req, res) => {
     const msg  = messages[0];
     const from = msg.from;
 
-    let messageBody    = "";
+    let messageBody      = "";
     let interactiveReply = null;
-    let locationData   = null;
-    let catalogueOrder = null;
+    let locationData     = null;
+    let catalogueOrder   = null;
 
-    // ── Text Message ──────────────────────────────────────
+    // ── Text ──────────────────────────────────────────────
     if (msg.type === "text") {
       messageBody = msg.text?.body || "";
     }
 
-    // ── Interactive (Button / List / Flow) ────────────────
+    // ── Interactive ───────────────────────────────────────
     else if (msg.type === "interactive") {
-
-      // Button reply
       if (msg.interactive?.type === "button_reply") {
         interactiveReply = msg.interactive.button_reply;
-      }
-
-      // List reply
-      else if (msg.interactive?.type === "list_reply") {
+      } else if (msg.interactive?.type === "list_reply") {
         interactiveReply = msg.interactive.list_reply;
-      }
-
-      // ✅ FIXED — Flow completion (nfm_reply)
-      // Flow response is fully handled by /flow/endpoint (AES encrypted).
-      // The nfm_reply that arrives here is just a webhook notification —
-      // no need to pass it to handleMessage. Just log and acknowledge.
-      else if (msg.interactive?.type === "nfm_reply") {
+      } else if (msg.interactive?.type === "nfm_reply") {
+        // Flow completion — handled by /flow/endpoint
         console.log("📋 Flow nfm_reply received — handled by /flow/endpoint");
         return res.sendStatus(200);
       }
     }
 
-    // ── Catalogue Order (user taps order from catalogue) ──
+    // ── Catalogue Order ───────────────────────────────────
     else if (msg.type === "order") {
       catalogueOrder = msg.order;
       console.log("🛒 Catalogue order received:", JSON.stringify(catalogueOrder, null, 2));
@@ -88,13 +77,11 @@ router.post("/", async (req, res) => {
       console.log("📍 Location received:", locationData);
     }
 
-    // ── Logs ──────────────────────────────────────────────
     console.log("\n📩 Incoming WhatsApp Message");
     console.log("👤 From:", from);
     console.log("💬 Message:", messageBody);
     console.log("⚡ Interactive:", interactiveReply);
 
-    // ── Handle Bot Logic ──────────────────────────────────
     await handleMessage(from, messageBody, interactiveReply, locationData, catalogueOrder);
 
     return res.sendStatus(200);

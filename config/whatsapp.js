@@ -117,7 +117,8 @@ async function sendCatalogueMessage(to) {
           action: {
             name: "catalog_message",
             parameters: {
-              thumbnail_product_retailer_id: "GRILL001", // ✅ FIXED — valid Content ID from your catalog
+              catalog_id: catalogueId,
+              thumbnail_product_retailer_id: "GRILL001",
             },
           },
         },
@@ -145,9 +146,9 @@ async function sendDeliveryFlow(to, cartSummary, totalAmount) {
         type: "interactive",
         interactive: {
           type: "flow",
-          header: { type: "text", text: "📦 Delivery Details" },
+          header: { type: "text", text: "📦 Order Details" },
           body: {
-            text: `Your cart total: *Rs.${totalAmount}*\n\nPlease fill your delivery details below:`,
+            text: `Your cart total: *Rs.${totalAmount}*\n\nFill your delivery details below:`,
           },
           footer: { text: "Kavi Chettinadu Restaurant" },
           action: {
@@ -159,7 +160,7 @@ async function sendDeliveryFlow(to, cartSummary, totalAmount) {
               flow_cta: "Enter Delivery Details",
               flow_action: "navigate",
               flow_action_payload: {
-                screen: "DELIVERY_DETAILS",
+                screen: "ADDRESS_STEP1",
                 data: {
                   cart_summary: cartSummary,
                   total_amount: `Rs.${totalAmount}`,
@@ -202,7 +203,7 @@ async function sendOrderConfirmation(to, order) {
       `─────────────────\n` +
       `⏱️ Est. Delivery: 30-45 mins\n\n` +
       `Thank you for ordering from Kavi Chettinadu! 🙏\n` +
-      `📞 95859 60612 / 95859 60613`
+      `📞 95859 60612`
     );
   } catch (err) {
     console.error("❌ sendOrderConfirmation error:", err.message);

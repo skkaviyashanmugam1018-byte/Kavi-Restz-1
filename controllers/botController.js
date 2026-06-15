@@ -514,11 +514,24 @@ async function sendAfterAddToCart(to, cart) {
 // ═══════════════════════════════════════════════════════════
 // PLACE ORDER
 // ═══════════════════════════════════════════════════════════
+const DELIVERY_CHARGE = 30;
+const GST_PERCENT     = 5;
+
 async function placeOrder(from, session) {
-  const { name, phone, address, order_type, paymentMethod, addons, addon_total, special_instructions, grand_total } = session.deliveryData;
+  const {
+    name, phone, address, order_type, paymentMethod,
+    addons, addon_total, delivery_charge, gst_amount,
+    special_instructions, grand_total
+  } = session.deliveryData;
+
   const cartTotal  = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
   const addonItems = (addons || []).map((a) => ({ name: a.name, price: a.price, quantity: 1 }));
-  const finalTotal = grand_total || cartTotal;
+  const addonTotal = addon_total || 0;
+  const isDelivery = order_type === "delivery";
+  const delCharge  = delivery_charge ?? (isDelivery ? DELIVERY_CHARGE : 0);
+  const subtotal   = cartTotal + addonTotal + delCharge;
+  const gst        = gst_amount ?? Math.round(subtotal * GST_PERCENT / 100);
+  const finalTotal = grand_total || (subtotal + gst);
   const orderId    = "KAV" + Date.now();
 
   const orderTypeLabel =
@@ -531,7 +544,7 @@ async function placeOrder(from, session) {
 
   const timeLabel = session.deliveryData?.delivery_time === "schedule" && session.deliveryData?.scheduled_time
     ? `📅 Scheduled: ${session.deliveryData.scheduled_time}`
-    : "⚡ ASAP (30-45 mins)";
+    : "⚡ ASAP (30–45 mins)";
 
   const allItems = [
     ...session.cart.map((i) => ({ name: i.name, price: i.price, quantity: i.qty })),
@@ -563,19 +576,46 @@ async function placeOrder(from, session) {
 
   await sendButtons(
     from,
-    `🎉 *Order Placed Successfully!*\n\n` +
-    `📋 *Order ID:* #${orderId}\n` +
-    `─────────────────\n` +
-    `*Items:*\n${itemsList}\n` +
-    `─────────────────\n` +
-    `💰 *Grand Total: Rs.${finalTotal}*\n` +
-    `💳 *Payment:* ${payLabel}\n` +
-    `🚚 *Type:* ${orderTypeLabel}\n` +
-    `🏠 *Address:* ${address || orderTypeLabel}\n` +
-    `⏰ *Time:* ${timeLabel}\n` +
-    `─────────────────\n` +
-    `⏱️ *Estimated Time:* 30-45 mins\n\n` +
-    `Thank you for ordering from\n🍛 *Kavi Chettinadu Restaurant!* 🙏\n📞 95859 60612`,
+    `🎉 *Order Placed Successfully!*
+
+` +
+    `📋 *Order ID:* #${orderId}
+` +
+    `─────────────────
+` +
+    `*Items:*
+${itemsList}
+` +
+    `─────────────────
+` +
+    `🛒 *Items Total:* Rs.${cartTotal}
+` +
+    (addonTotal > 0 ? `🍱 *Add-ons:* Rs.${addonTotal}
+` : "") +
+    `🚚 *Delivery:* ${isDelivery ? `Rs.${delCharge}` : "Free"}
+` +
+    `📊 *GST (${GST_PERCENT}%):* Rs.${gst}
+` +
+    `─────────────────
+` +
+    `💰 *Grand Total: Rs.${finalTotal}*
+` +
+    `💳 *Payment:* ${payLabel}
+` +
+    `🚚 *Type:* ${orderTypeLabel}
+` +
+    `🏠 *Address:* ${address || orderTypeLabel}
+` +
+    `⏰ *Time:* ${timeLabel}
+` +
+    `─────────────────
+` +
+    `⏱️ *Estimated Time:* 30–45 mins
+
+` +
+    `Thank you for ordering from
+🍛 *Kavi Chettinadu Restaurant!* 🙏
+📞 95859 60612`,
     [
       { id: "BROWSE_MENU", title: "🔄 Order Again" },
       { id: "exit",        title: "❌ Exit"         },
