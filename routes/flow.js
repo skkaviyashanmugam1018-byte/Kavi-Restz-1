@@ -160,8 +160,7 @@ router.post("/endpoint", async (req, res) => {
             district:       data.district       || "",
             pincode:        data.pincode        || "",
             order_type:     data.order_type     || "delivery",
-            delivery_time:  data.delivery_time  || "asap",
-            scheduled_time: data.scheduled_time || "",
+            delivery_time:  "asap",
             cart_summary:   data.cart_summary   || "",
             total_amount:   data.total_amount   || "",
           }
@@ -206,7 +205,7 @@ router.post("/endpoint", async (req, res) => {
       const {
         customer_name, customer_phone,
         door_no, street, landmark, area, city, district, pincode,
-        order_type, delivery_time, scheduled_time,
+        order_type,
         selected_addons, special_instructions,
         total_amount,
       } = data;
@@ -241,9 +240,7 @@ router.post("/endpoint", async (req, res) => {
         ? addonItems.map((a) => `${a.name} (Rs.${a.price})`).join(", ")
         : "None";
 
-      const timeText = delivery_time === "schedule" && scheduled_time
-        ? `📅 Scheduled: ${scheduled_time}`
-        : "⚡ ASAP (30–45 mins)";
+      const timeText = "⚡ ASAP (30–45 mins)";
 
       const orderTypeLabel =
         order_type === "delivery" ? "🚚 Home Delivery" :
@@ -257,8 +254,8 @@ router.post("/endpoint", async (req, res) => {
           phone:                customer_phone    || sessionPhone,
           address:              delivery_address,
           order_type,
-          delivery_time,
-          scheduled_time,
+          delivery_time:        "asap",
+          scheduled_time:       "",
           addons:               addonItems,
           addon_total:          addonTotal,
           delivery_charge:      deliveryCharge,
