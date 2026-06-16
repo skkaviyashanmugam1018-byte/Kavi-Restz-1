@@ -539,8 +539,8 @@ async function placeOrder(from, session) {
     order_type === "takeaway" ? "🥡 Take Away"     : "🍽️ Dine In";
 
   const payLabel =
-    paymentMethod === "PAY_COD"  ? "💵 Cash on Delivery" :
-    paymentMethod === "PAY_UPI"  ? "📲 UPI Payment"      : "💳 Card Payment";
+    paymentMethod === "PAY_COD"  ? "COD" :
+    paymentMethod === "PAY_UPI"  ? "UPI" : "Card";
 
   const timeLabel = session.deliveryData?.delivery_time === "schedule" && session.deliveryData?.scheduled_time
     ? `📅 Scheduled: ${session.deliveryData.scheduled_time}`
@@ -881,7 +881,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         sweet: { name: "Sweet (Kheer)", price: 50 },
       };
 
-      const baseTotal      = parseFloat(String(total_amount || "0").replace(/[^0-9.]/g, "")) || session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+      const baseTotal      = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
       const addonList      = Array.isArray(selected_addons) ? selected_addons : [];
       const addonItems     = addonList.map((id) => ADDON_PRICES_MAP[id]).filter(Boolean);
       const addonTotal     = addonItems.reduce((s, a) => s + a.price, 0);
@@ -974,11 +974,11 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
           session.cart.reduce((s, i) => s + i.price * i.qty, 0);
         const upiId = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
         await sendText(from,
-          `📲 *UPI Payment Details*\n\n💳 UPI ID: *${upiId}*\n💰 Amount: *Rs.${total}*\n\nPlease complete the payment and confirm below.`
+          `📲 *UPI Payment Details*\n\n💳 UPI ID: *${upiId}*\n💰 Amount: *Rs.${total}*\n\nPay now and confirm below.`
         );
         await sendButtons(from, "Have you completed the UPI payment?", [
-          { id: "UPI_DONE", title: "✅ Payment Done"    },
-          { id: "PAY_COD",  title: "💵 Pay COD instead" },
+          { id: "UPI_DONE",  title: "✅ Pay Now"          },
+          { id: "PAY_COD",   title: "💵 Pay COD instead"  },
         ]);
         return;
       }
