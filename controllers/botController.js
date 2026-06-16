@@ -860,6 +860,10 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         selected_addons, special_instructions,
       } = flowData;
 
+      // Build full address immediately after destructuring
+      const full_address = [delivery_address, pincode ? `- ${pincode}` : null]
+        .filter(Boolean).join(" ");
+
 
 
       const cartTotal  = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
@@ -929,7 +933,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         `👤 *Name:* ${customer_name}\n` +
         `📞 *Phone:* ${customer_phone}\n` +
         (alternate_phone ? `📞 *Alt:* ${alternate_phone}\n` : "") +
-        `📍 *Address:* ${delivery_address}\n` +
+        `📍 *Address:* ${full_address}\n` +
         `🚚 *Type:* ${orderTypeLabel}${tableInfo}\n` +
         `📝 *Note:* ${special_instructions || "None"}\n` +
         `─────────────────\n` +
