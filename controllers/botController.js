@@ -367,12 +367,30 @@ function findItem(itemId) {
   return null;
 }
 
+function normalizeQuery(str) {
+  return str.toLowerCase().trim()
+    .replace(/biryani/g, "biriyani")
+    .replace(/briyani/g, "biriyani")
+    .replace(/bryani/g, "biriyani")
+    .replace(/noodle/g, "noodles")
+    .replace(/paratha/g, "parotta")
+    .replace(/paratha/g, "parotta")
+    .replace(/chiken/g, "chicken")
+    .replace(/chiken/g, "chicken")
+    .replace(/muttan/g, "mutton")
+    .replace(/prawn/g, "prawns");
+}
+
 function searchItems(query) {
-  const q = query.toLowerCase().trim();
-  return ALL_ITEMS.filter((item) =>
-    item.name.toLowerCase().includes(q) ||
-    item.catLabel.toLowerCase().includes(q)
-  ).slice(0, 9);
+  const q = normalizeQuery(query);
+  return ALL_ITEMS.filter((item) => {
+    const name = normalizeQuery(item.name);
+    const cat  = normalizeQuery(item.catLabel);
+    // Check each word in query separately too
+    const words = q.split(" ").filter(w => w.length > 2);
+    return name.includes(q) || cat.includes(q) ||
+      words.some(w => name.includes(w));
+  }).slice(0, 9);
 }
 
 function buildCartMsg(cart) {
@@ -717,6 +735,17 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
+    // ── BROWSE MENU FLOW (new flow-based ordering) ────────
+    if (input === "BROWSE_MENU_FLOW") {
+      session.cart = [];
+      session.markModified("cart");
+      await session.save();
+      await sendDeliveryFlow(from, "", 0);
+      session.state = "AWAITING_FLOW";
+      await session.save();
+      return;
+    }
+
     // ── MENU PAGINATION ───────────────────────────────────
     if (input?.startsWith("MENU_PAGE_")) {
       const page = parseInt(input.replace("MENU_PAGE_", ""));
@@ -977,4 +1006,4 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
   }
 };
 
-module.exports = { handleMessage, placeOrder };
+module.exports = { handleMessage, placeOrder, CATALOGUE_PRICE_MAP };
