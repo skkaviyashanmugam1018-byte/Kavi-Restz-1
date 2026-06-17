@@ -423,6 +423,7 @@ function getDeliveryCharge(orderType, withinFiveKm) {
 // SEND FUNCTIONS
 // ═══════════════════════════════════════════════════════════
 async function sendWelcome(to) {
+  await sendImage(to, "https://kavirestaurant.in/wp-content/uploads/2026/05/logo-01-scaled.jpg", "🍛 *Kavi Chettinadu Restaurant*\n_Taste The Tradition_ ✨");
   await sendList(
     to,
     "🍛 Kavi Chettinadu",
