@@ -123,9 +123,17 @@ router.post("/endpoint", async (req, res) => {
 
     // ── INITIAL NAVIGATE (flow first load) ───────────────
     if (action === "navigate" && (!screen || screen === "")) {
-      console.log("📋 Initial navigate - return active");
+      console.log("📋 Initial navigate → ORDER_TYPE screen");
       return res.status(200).send(encryptResponse({
-        data: { status: "active" }
+        screen: "ORDER_TYPE",
+        data: {
+          cart_summary:   data?.cart_summary   || "",
+          total_amount:   data?.total_amount   || "Rs.0",
+          customer_name:  "",
+          customer_phone: "",
+          error_messages: {},
+          init_values:    {},
+        }
       }, aesKey, iv));
     }
 
