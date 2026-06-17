@@ -50,49 +50,6 @@ const ADDON_PRICES = {
   sweet:       { name: "Sweet (Kheer)", price: 50 },
 };
 
-async function sendPaymentOptions(phone, session, billText) {
-  try {
-    const Razorpay = require("razorpay");
-    const rzp = new Razorpay({
-      key_id:     process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET,
-    });
-    const total = session.deliveryData?.grand_total || 0;
-    const payLink = await rzp.paymentLink.create({
-      amount:      total * 100,
-      currency:    "INR",
-      description: `Kavi Chettinadu - ${session.deliveryData?.name || "Customer"}`,
-      customer: { name: session.deliveryData?.name || "Customer", contact: session.deliveryData?.phone || phone },
-      notify: { sms: false, email: false },
-      expire_by: Math.floor(Date.now() / 1000) + 300,
-      reminder_enable: false,
-    });
-    session.deliveryData.paymentLink = payLink.short_url;
-    session.markModified("deliveryData");
-    await session.save();
-    console.log("✅ Razorpay link:", payLink.short_url);
-  } catch (err) {
-    console.error("❌ Razorpay error:", err.message);
-  }
-
-  const orderType = session.deliveryData?.order_type;
-  const total = session.deliveryData?.grand_total || 0;
-  const payLink = session.deliveryData?.paymentLink;
-
-  if (orderType === "delivery") {
-    await sendButtons(phone, billText, [
-      { id: "PAY_COD",  title: "💵 Cash on Delivery" },
-      { id: "PAY_QR",   title: "📲 Scan & Pay (UPI)"  },
-      { id: "PAY_CARD", title: "💳 Card Payment"       },
-    ]);
-  } else {
-    await sendButtons(phone, billText, [
-      { id: "PAY_QR",   title: "📲 Scan & Pay (UPI)"  },
-      { id: "PAY_CARD", title: "💳 Card Payment"       },
-    ]);
-  }
-}
-
 router.post("/endpoint", async (req, res) => {
   try {
     const body = req.body;
@@ -121,31 +78,14 @@ router.post("/endpoint", async (req, res) => {
       return res.status(200).send(encryptResponse({ data: { status: "active" } }, aesKey, iv));
     }
 
-    // ── INITIAL NAVIGATE (flow first load) ───────────────
-    if (action === "navigate" && (!screen || screen === "")) {
-      console.log("📋 Initial navigate → ORDER_TYPE screen");
-      return res.status(200).send(encryptResponse({
-        screen: "ORDER_TYPE",
-        data: {
-          cart_summary:   data?.cart_summary   || "",
-          total_amount:   data?.total_amount   || "Rs.0",
-          customer_name:  "",
-          customer_phone: "",
-          error_messages: {},
-          init_values:    {},
-        }
-      }, aesKey, iv));
-    }
-
     const tokenParts = (flow_token || "").split("_");
     const phone = tokenParts.length >= 2 ? tokenParts[1] : null;
     console.log(`📞 Phone: ${phone}`);
 
-    // ── ORDER_TYPE → data_exchange → route to correct screen ─
+    // ── ORDER_TYPE → route based on order_type ────────────
     if (screen === "ORDER_TYPE") {
       const orderType = data.order_type || "delivery";
-      console.log(`📋 ORDER_TYPE data_exchange → ${orderType}`);
-
+      console.log(`📋 ORDER_TYPE → ${orderType}`);
       const commonData = {
         customer_name:  data.customer_name  || "",
         customer_phone: data.customer_phone || "",
@@ -154,123 +94,54 @@ router.post("/endpoint", async (req, res) => {
         cart_summary:   data.cart_summary   || "",
         total_amount:   data.total_amount   || "",
       };
-
-      if (orderType === "delivery") {
-        return res.status(200).send(encryptResponse({
-          screen: "DELIVERY_ADDRESS", data: commonData
-        }, aesKey, iv));
-      }
       if (orderType === "takeaway") {
-        return res.status(200).send(encryptResponse({
-          screen: "TAKEAWAY_ADDONS", data: commonData
-        }, aesKey, iv));
+        return res.status(200).send(encryptResponse({ screen: "TAKEAWAY_ADDONS", data: commonData }, aesKey, iv));
       }
-      // dine_in
-      return res.status(200).send(encryptResponse({
-        screen: "DINE_BOOKING", data: commonData
-      }, aesKey, iv));
+      if (orderType === "dine_in") {
+        return res.status(200).send(encryptResponse({ screen: "DINE_BOOKING", data: commonData }, aesKey, iv));
+      }
+      return res.status(200).send(encryptResponse({ screen: "DELIVERY_ADDRESS", data: commonData }, aesKey, iv));
     }
 
-    // ── DELIVERY_ADDRESS → route based on order_type ────────
+    // ── DELIVERY_ADDRESS → DELIVERY_KMS ──────────────────
     if (screen === "DELIVERY_ADDRESS") {
-      const orderType = data.order_type || "delivery";
-      // If takeaway - go to TAKEAWAY_ADDONS
-      if (orderType === "takeaway") {
-        console.log("📋 DELIVERY_ADDRESS → TAKEAWAY_ADDONS (takeaway)");
-        return res.status(200).send(encryptResponse({
-          screen: "TAKEAWAY_ADDONS",
-          data: {
-            customer_name:  data.customer_name  || "",
-            customer_phone: data.customer_phone || "",
-            alternate_phone: data.alternate_phone || "",
-            order_type:     orderType,
-            cart_summary:   data.cart_summary   || "",
-            total_amount:   data.total_amount   || "",
-          }
-        }, aesKey, iv));
-      }
-      // If dine_in - go to DINE_BOOKING
-      if (orderType === "dine_in") {
-        console.log("📋 DELIVERY_ADDRESS → DINE_BOOKING (dine_in)");
-        return res.status(200).send(encryptResponse({
-          screen: "DINE_BOOKING",
-          data: {
-            customer_name:  data.customer_name  || "",
-            customer_phone: data.customer_phone || "",
-            alternate_phone: data.alternate_phone || "",
-            order_type:     orderType,
-            cart_summary:   data.cart_summary   || "",
-            total_amount:   data.total_amount   || "",
-          }
-        }, aesKey, iv));
-      }
-      // delivery - continue to DELIVERY_KMS
-      console.log("📋 DELIVERY_ADDRESS → DELIVERY_KMS");
       console.log("📋 DELIVERY_ADDRESS → DELIVERY_KMS");
       return res.status(200).send(encryptResponse({
         screen: "DELIVERY_KMS",
-        data: {
-          customer_name:    data.customer_name    || "",
-          customer_phone:   data.customer_phone   || "",
-          alternate_phone:  data.alternate_phone  || "",
-          order_type:       data.order_type       || "delivery",
-          delivery_address: data.delivery_address || "",
-          pincode:          data.pincode          || "",
-          cart_summary:     data.cart_summary     || "",
-          total_amount:     data.total_amount     || "",
-        }
+        data: { ...data }
       }, aesKey, iv));
     }
 
-    // ── DELIVERY_KMS → DELIVERY_ADDONS ───────────────────────
+    // ── DELIVERY_KMS → DELIVERY_ADDONS ───────────────────
     if (screen === "DELIVERY_KMS") {
       console.log("📋 DELIVERY_KMS → DELIVERY_ADDONS");
       return res.status(200).send(encryptResponse({
         screen: "DELIVERY_ADDONS",
-        data: {
-          customer_name:    data.customer_name    || "",
-          customer_phone:   data.customer_phone   || "",
-          alternate_phone:  data.alternate_phone  || "",
-          order_type:       data.order_type       || "delivery",
-          delivery_address: data.delivery_address || "",
-          pincode:          data.pincode          || "",
-          within_five_km:   data.within_five_km   || "yes",
-          cart_summary:     data.cart_summary     || "",
-          total_amount:     data.total_amount     || "",
-        }
+        data: { ...data }
       }, aesKey, iv));
     }
 
-    // ── DELIVERY_ADDONS → DELIVERY_SUMMARY ───────────────────
+    // ── DELIVERY_ADDONS → DELIVERY_SUMMARY ───────────────
     if (screen === "DELIVERY_ADDONS") {
       console.log("📋 DELIVERY_ADDONS → DELIVERY_SUMMARY");
       return res.status(200).send(encryptResponse({
         screen: "DELIVERY_SUMMARY",
-        data: {
-          ...data,
-          selected_addons:      data.selected_addons      || [],
-          special_instructions: data.special_instructions || "",
-        }
+        data: { ...data, selected_addons: data.selected_addons || [], special_instructions: data.special_instructions || "" }
       }, aesKey, iv));
     }
 
-    // ── TAKEAWAY_ADDONS → TAKEAWAY_SUMMARY ───────────────────
+    // ── TAKEAWAY_ADDONS → TAKEAWAY_SUMMARY ───────────────
     if (screen === "TAKEAWAY_ADDONS") {
       console.log("📋 TAKEAWAY_ADDONS → TAKEAWAY_SUMMARY");
       return res.status(200).send(encryptResponse({
         screen: "TAKEAWAY_SUMMARY",
-        data: {
-          ...data,
-          selected_addons:      data.selected_addons      || [],
-          special_instructions: data.special_instructions || "",
-          pickup_time:          data.pickup_time          || "",
-        }
+        data: { ...data, selected_addons: data.selected_addons || [], special_instructions: data.special_instructions || "", pickup_time: data.pickup_time || "" }
       }, aesKey, iv));
     }
 
-    // ── COMPLETE ──────────────────────────────────────────────
+    // ── COMPLETE ──────────────────────────────────────────
     if (action === "complete") {
-      console.log("✅ Flow COMPLETE! Screen:", screen);
+      console.log("✅ Flow COMPLETE!");
       console.log("📦 Data:", JSON.stringify(data, null, 2));
 
       const {
@@ -279,19 +150,17 @@ router.post("/endpoint", async (req, res) => {
         selected_addons, special_instructions,
         table_persons, table_date, table_time, table_seating,
         pickup_time,
-        total_amount,
       } = data;
 
       const full_address = order_type === "delivery"
         ? [delivery_address, pincode ? `- ${pincode}` : null].filter(Boolean).join(" ")
-        : order_type === "takeaway" ? "Take Away — Pick up at restaurant" : "Dine In";
+        : order_type === "takeaway" ? `Take Away | Pickup: ${pickup_time || "ASAP"}` : "Dine In";
 
       const addonList  = Array.isArray(selected_addons) ? selected_addons : [];
       const addonItems = addonList.map(id => ADDON_PRICES[id]).filter(Boolean);
       const addonTotal = addonItems.reduce((s, a) => s + a.price, 0);
       const isDelivery = order_type === "delivery";
-      const isWithin   = within_five_km === "yes";
-      const deliveryCh = isDelivery ? (isWithin ? 100 : 150) : 0;
+      const deliveryCh = isDelivery ? (within_five_km === "yes" ? 100 : 150) : 0;
 
       let session = await Session.findOne({ phoneNumber: phone });
       if (!session) {
@@ -309,46 +178,42 @@ router.post("/endpoint", async (req, res) => {
         order_type === "takeaway" ? "🥡 Take Away"     : "🍽️ Dine In";
 
       const deliveryLabel = isDelivery
-        ? `Rs.${deliveryCh} (${isWithin ? "Within 5km" : "Above 5km"})`
+        ? `Rs.${deliveryCh} (${within_five_km === "yes" ? "Within 5km" : "Above 5km"})`
         : "Free";
 
       const addonText = addonItems.length > 0
         ? addonItems.map(a => `${a.name} (Rs.${a.price})`).join(", ")
-        : "None";
+        : "";
 
       const tableInfo = order_type === "dine_in"
         ? `\n👥 *People:* ${table_persons}\n📅 *Date:* ${table_date}\n🕐 *Time:* ${table_time}\n🪑 *Seating:* ${table_seating === "ac" ? "❄️ AC" : "🌿 Non-AC"}`
-        : order_type === "takeaway" && pickup_time
-        ? `\n🕐 *Pickup Time:* ${pickup_time}`
-        : "";
+        : order_type === "takeaway" ? `\n🕐 *Pickup Time:* ${pickup_time}` : "";
 
       session.deliveryData = {
-        name:                 customer_name     || "Customer",
-        phone:                customer_phone    || phone,
-        alternate_phone:      alternate_phone   || "",
-        address:              full_address,
+        name: customer_name || "Customer",
+        phone: customer_phone || phone,
+        alternate_phone: alternate_phone || "",
+        address: full_address,
         order_type,
-        delivery_time:        "asap",
-        table_persons:        table_persons     || "",
-        table_date:           table_date        || "",
-        table_time:           table_time        || "",
-        table_seating:        table_seating     || "",
-        pickup_time:          pickup_time       || "",
-        addons:               addonItems,
-        addon_total:          addonTotal,
-        delivery_charge:      deliveryCh,
-        gst_amount:           gstAmount,
+        delivery_time: "asap",
+        table_persons: table_persons || "",
+        table_date: table_date || "",
+        table_time: table_time || "",
+        table_seating: table_seating || "",
+        pickup_time: pickup_time || "",
+        addons: addonItems,
+        addon_total: addonTotal,
+        delivery_charge: deliveryCh,
+        gst_amount: gstAmount,
         special_instructions: special_instructions || "",
-        grand_total:          grandTotal,
+        grand_total: grandTotal,
       };
       session.state = "PAYMENT_SELECT";
       session.markModified("deliveryData");
       await session.save();
-      console.log(`✅ Session updated | Grand Total: Rs.${grandTotal}`);
+      console.log(`✅ Session saved | Total: Rs.${grandTotal}`);
 
-      // For Dine In — send booking success + payment
       const isDineIn = order_type === "dine_in";
-
       const billText =
         (isDineIn ? `✅ *Table Booking Confirmed!*\n\n` : `🧾 *Order Bill Summary*\n\n`) +
         `👤 *Name:* ${customer_name}\n` +
@@ -356,19 +221,36 @@ router.post("/endpoint", async (req, res) => {
         (alternate_phone ? `📞 *Alt:* ${alternate_phone}\n` : "") +
         `📍 *Address:* ${full_address}\n` +
         `🚚 *Type:* ${orderTypeLabel}${tableInfo}\n` +
-        (addonText !== "None" ? `🍱 *Add-ons:* ${addonText}\n` : "") +
-        `📝 *Note:* ${special_instructions || "None"}\n` +
+        (addonText ? `🍱 *Add-ons:* ${addonText}\n` : "") +
+        (special_instructions ? `📝 *Note:* ${special_instructions}\n` : "") +
         `─────────────────\n` +
         `🛒 *Items:* Rs.${cartTotal}\n` +
         (addonTotal > 0 ? `🍱 *Add-ons:* Rs.${addonTotal}\n` : "") +
         `🚚 *Delivery:* ${deliveryLabel}\n` +
         `📊 *GST (${GST_PERCENT}%):* Rs.${gstAmount}\n` +
         `─────────────────\n` +
-        `💰 *Total: Rs.${grandTotal}*\n\n` +
+        `💰 *Grand Total: Rs.${grandTotal}*\n\n` +
         `Select payment method:`;
 
-      await sendPaymentOptions(phone, session, billText);
-      console.log(`✅ Payment options sent to ${phone}`);
+      if (order_type === "delivery") {
+        await sendButtons(phone, billText, [
+          { id: "PAY_COD",  title: "💵 Cash on Delivery" },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"      },
+          { id: "PAY_CARD", title: "💳 Card Payment"      },
+        ]);
+      } else if (order_type === "takeaway") {
+        await sendButtons(phone, billText, [
+          { id: "PAY_COD",  title: "💵 Cash on Pickup"   },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"      },
+          { id: "PAY_CARD", title: "💳 Card Payment"      },
+        ]);
+      } else {
+        await sendButtons(phone, billText, [
+          { id: "PAY_REST", title: "🍽️ Pay at Restaurant" },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"      },
+          { id: "PAY_CARD", title: "💳 Card Payment"      },
+        ]);
+      }
 
       return res.status(200).send(
         encryptResponse({ screen: "SUCCESS", data: { status: "payment_pending" } }, aesKey, iv)
