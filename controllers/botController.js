@@ -4,6 +4,7 @@ const {
   sendText,
   sendButtons,
   sendList,
+  sendImage,
   sendCatalogueMessage,
   sendDeliveryFlow,
 } = require("../config/whatsapp");
@@ -955,72 +956,52 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
     }
 
     // ── PAYMENT ───────────────────────────────────────────
-    if (["PAY_COD", "PAY_UPI", "PAY_CARD"].includes(input)) {
+    if (["PAY_COD", "PAY_UPI", "PAY_QR", "PAY_CARD"].includes(input)) {
       session.deliveryData.paymentMethod = input;
       session.markModified("deliveryData");
       await session.save();
 
-      if (input === "PAY_UPI") {
+      if (input === "PAY_QR" || input === "PAY_UPI") {
         const total = session.deliveryData?.grand_total || session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+        // Send QR code image if available
+        const qrUrl = process.env.RESTAURANT_QR_URL;
+        if (qrUrl) {
+          await sendImage(from, qrUrl, `📲 Scan to Pay\n💰 Amount: Rs.${total}\nAfter payment click confirm below.`);
+        }
+        // Also send Razorpay link
         try {
           const Razorpay = require("razorpay");
-          const razorpay = new Razorpay({
-            key_id:     process.env.RAZORPAY_KEY_ID,
-            key_secret: process.env.RAZORPAY_KEY_SECRET,
-          });
-          const paymentLink = await razorpay.paymentLink.create({
-            amount:      total * 100, // paise
-            currency:    "INR",
-            description: `Kavi Chettinadu Order - ${session.deliveryData?.name || "Customer"}`,
-            customer: {
-              name:    session.deliveryData?.name  || "Customer",
-              contact: session.deliveryData?.phone || from,
-            },
-            notify:    { sms: false, email: false },
-            expire_by: Math.floor(Date.now() / 1000) + 300, // 5 minutes
+          const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+          const payLink = await rzp.paymentLink.create({
+            amount: total * 100, currency: "INR",
+            description: `Kavi Chettinadu - ${session.deliveryData?.name || "Customer"}`,
+            customer: { name: session.deliveryData?.name || "Customer", contact: session.deliveryData?.phone || from },
+            notify: { sms: false, email: false },
+            expire_by: Math.floor(Date.now() / 1000) + 300,
             reminder_enable: false,
           });
-          console.log("✅ Razorpay payment link created:", paymentLink.short_url);
-          await sendText(from,
-            `📲 *UPI Payment*\n\n` +
-            `💰 Amount: *Rs.${total}*\n\n` +
-            `🔗 *Pay here:* ${paymentLink.short_url}\n\n` +
-            `⏰ Link expires in 5 minutes!\n\n` +
-            `After payment, click confirm below.`
-          );
+          await sendText(from, `🔗 *Or pay via link:* ${payLink.short_url}\n\n⏰ Link expires in 5 mins!`);
         } catch (rzpErr) {
-          console.error("❌ Razorpay error:", rzpErr.message);
           const upiId = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
-          const total2 = session.deliveryData?.grand_total || session.cart.reduce((s, i) => s + i.price * i.qty, 0);
-          await sendText(from,
-            `📲 *UPI Payment*\n\n` +
-            `💳 UPI ID: *${upiId}*\n` +
-            `💰 Amount: *Rs.${total2}*\n\n` +
-            `Pay now and click confirm below.`
-          );
+          await sendText(from, `💳 *UPI ID:* ${upiId}\n💰 *Amount:* Rs.${total}`);
         }
         await sendButtons(from, "✅ Have you completed the payment?", [
-          { id: "UPI_DONE", title: "✅ Pay Now — Done"   },
-          { id: "PAY_COD",  title: "💵 Pay COD instead"  },
+          { id: "UPI_DONE", title: "✅ Pay Now — Done"  },
+          { id: "PAY_COD",  title: "💵 Pay COD instead" },
         ]);
         return;
       }
       if (input === "PAY_CARD") {
         const total = session.deliveryData?.grand_total || session.cart.reduce((s, i) => s + i.price * i.qty, 0);
-        session.state = "AWAITING_CARD";
+        session.deliveryData.paymentMethod = "PAY_CARD";
         session.markModified("deliveryData");
         await session.save();
         await sendText(from,
           `💳 *Card Payment Details*\n\n` +
           `💰 Amount: *Rs.${total}*\n\n` +
-          `Please provide your card details:\n` +
-          `Type: *Card Number* (last 4 digits only for verification)\n\n` +
-          `Or card payment will be collected at delivery/counter.`
+          `Card payment will be collected at delivery/counter.`
         );
-        await sendButtons(from, "How would you like to proceed?", [
-          { id: "CARD_COD",  title: "💳 Pay at Delivery" },
-          { id: "PAY_COD",   title: "💵 Switch to COD"   },
-        ]);
+        await placeOrder(from, session);
         return;
       }
       await placeOrder(from, session);
