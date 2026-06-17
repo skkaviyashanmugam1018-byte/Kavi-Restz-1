@@ -131,7 +131,14 @@ async function sendDeliveryFlow(to, cartSummary, totalAmount) {
               flow_action: "navigate",
               flow_action_payload: {
                 screen: "ORDER_TYPE",
-                data: { cart_summary: cartSummary, total_amount: `Rs.${totalAmount}`, customer_name: "", customer_phone: "", error_messages: {}, init_values: {} },
+                data: {
+                  cart_summary:   cartSummary || "",
+                  total_amount:   `Rs.${totalAmount}`,
+                  customer_name:  "",
+                  customer_phone: "",
+                  error_messages: {},
+                  init_values:    {},
+                },
               },
             },
           },
