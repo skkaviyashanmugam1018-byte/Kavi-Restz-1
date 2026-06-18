@@ -88,7 +88,7 @@ router.post("/endpoint", async (req, res) => {
     // ── INITIAL LOAD ──────────────────────────────────────
     if (action === "navigate" && (!screen || screen === "")) {
       console.log("📋 Initial load → ORDER_TYPE");
-      return res.status(200).send(encryptResponse({
+      const respData = {
         screen: "ORDER_TYPE",
         data: {
           cart_summary:   data?.cart_summary   || "",
@@ -96,7 +96,9 @@ router.post("/endpoint", async (req, res) => {
           error_messages: {},
           init_values:    {},
         }
-      }, aesKey, iv));
+      };
+      console.log("📤 Response:", JSON.stringify(respData));
+      return res.status(200).send(encryptResponse(respData, aesKey, iv));
     }
 
     const tokenParts = (flow_token || "").split("_");
