@@ -6,9 +6,14 @@ const path    = require("path");
 const Session = require("../models/Session");
 const { sendButtons, sendText, sendImage } = require("../config/whatsapp");
 
-const privateKey = process.env.PRIVATE_KEY
-  ? process.env.PRIVATE_KEY.replace(/\\n/g, "\n")
-  : fs.readFileSync(path.join(__dirname, "../private.pem"), "utf8");
+let privateKey;
+if (process.env.PRIVATE_KEY) {
+  privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n");
+  console.log("🔑 Using PRIVATE_KEY from env, length:", privateKey.length);
+} else {
+  privateKey = fs.readFileSync(path.join(__dirname, "../private.pem"), "utf8");
+  console.log("🔑 Using private.pem file, length:", privateKey.length);
+}
 
 function decryptRequest(body) {
   const { encrypted_aes_key, encrypted_flow_data, initial_vector } = body;
