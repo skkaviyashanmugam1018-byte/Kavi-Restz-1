@@ -859,8 +859,31 @@ Browse our menu:`,
         ]);
         return;
       }
+      // ✅ Check if order type was pre-selected from main menu
+      const preSelected = session.preSelectedOrderType;
+      if (preSelected === "delivery") {
+        // Ask location first
+        session.state = "AWAITING_LOCATION_CHOICE";
+        session.deliveryData = {};
+        session.markModified("deliveryData");
+        await session.save();
+        await sendList(from,
+          "📍 Share Location Details",
+          "Choose how to share your delivery address:",
+          "Choose",
+          [{
+            title: "Address Options",
+            rows: [
+              {id:"SHARE_LOCATION", title:"📍 Live Location",   description:"Share current location from WhatsApp"},
+              {id:"SKIP_LOCATION",  title:"✏️ Type My Address", description:"Enter address manually in form"},
+            ]
+          }]
+        );
+        return;
+      }
+      // Dine In / Takeaway / no pre-selection → open flow directly
       session.state = "AWAITING_FLOW";
-      session.deliveryData = {};
+      session.deliveryData = session.deliveryData || {};
       session.markModified("deliveryData");
       await session.save();
       const cartSummary = buildCartSummary(session.cart);
