@@ -599,17 +599,31 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
           live_location: address,
           live_location_coords: {lat:locationData.lat, lng:locationData.lng},
         };
-        session.state = "CATALOGUE";  // go to menu first
         session.markModified("deliveryData");
-        await session.save();
-        await sendText(from,
-          `✅ *Location received!*\n📍 ${address}\n\n🚚 *Distance:* ~${dist.km}km from restaurant\n💰 *Delivery charge:* Rs.${dist.charge}\n\nNow add items to your cart:`
-        );
-        await sendButtons(from, "Browse our menu:", [
-          {id:"VIEW_CATALOGUE", title:"🖼️ View Catalogue"},
-          {id:"BROWSE_MENU",    title:"📋 Browse Menu"},
-          {id:"search",         title:"🔍 Search Dish"},
-        ]);
+
+        if (session.cart && session.cart.length > 0) {
+          // Cart has items → open flow directly
+          session.state = "AWAITING_FLOW";
+          await session.save();
+          const cartSummary = buildCartSummary(session.cart);
+          const total = session.cart.reduce((s,i) => s+i.price*i.qty, 0);
+          await sendText(from,
+            `✅ *Location received!*\n📍 ${address}\n🚚 ~${dist.km}km | Delivery: Rs.${dist.charge}\n\nFilling order details...`
+          );
+          await sendDeliveryFlow(from, cartSummary, total);
+        } else {
+          // No cart → browse menu first
+          session.state = "CATALOGUE";
+          await session.save();
+          await sendText(from,
+            `✅ *Location received!*\n📍 ${address}\n🚚 ~${dist.km}km | Delivery: Rs.${dist.charge}\n\nNow add items to your cart:`
+          );
+          await sendButtons(from, "Browse our menu:", [
+            {id:"VIEW_CATALOGUE", title:"🖼️ View Catalogue"},
+            {id:"BROWSE_MENU",    title:"📋 Browse Menu"},
+            {id:"search",         title:"🔍 Search Dish"},
+          ]);
+        }
       } else {
         await sendText(from, `📍 *Location received!*\n${mapsUrl}\n\nSend *hi* to start ordering.`);
       }
@@ -859,12 +873,12 @@ Browse our menu:`,
         ]);
         return;
       }
-      // ✅ Check if order type was pre-selected from main menu
       const preSelected = session.preSelectedOrderType;
+      console.log(`🎯 PLACE_ORDER | preSelected: ${preSelected}`);
+
       if (preSelected === "delivery") {
-        // Ask location first
+        // ✅ Delivery — ask location AGAIN before flow
         session.state = "AWAITING_LOCATION_CHOICE";
-        session.deliveryData = {};
         session.markModified("deliveryData");
         await session.save();
         await sendList(from,
@@ -881,9 +895,8 @@ Browse our menu:`,
         );
         return;
       }
-      // Dine In / Takeaway / no pre-selection → open flow directly
+      // Dine In / Takeaway / no pre-selection → flow directly
       session.state = "AWAITING_FLOW";
-      session.deliveryData = session.deliveryData || {};
       session.markModified("deliveryData");
       await session.save();
       const cartSummary = buildCartSummary(session.cart);
