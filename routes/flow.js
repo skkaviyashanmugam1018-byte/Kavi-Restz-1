@@ -62,12 +62,16 @@ router.post("/endpoint", async (req, res) => {
     const body = req.body;
     console.log("📩 Flow endpoint | action:", body?.action || "encrypted");
 
+    // ✅ FIX 1: Unencrypted ping — correct format with version
     if (body?.action === "ping") {
-      return res.status(200).json({ data: { status: "active" } });
+      console.log("🏓 Ping received → pong");
+      return res.status(200).json({ version: "3.0", data: { status: "active" } });
     }
 
+    // ✅ FIX 2: Missing encryption fields — health check
     if (!body?.encrypted_aes_key || !body?.encrypted_flow_data || !body?.initial_vector) {
-      return res.status(200).json({ data: { status: "active" } });
+      console.log("⚠️ Missing encryption fields → health check response");
+      return res.status(200).json({ version: "3.0", data: { status: "active" } });
     }
 
     let decryptedBody, aesKey, iv;
@@ -81,13 +85,15 @@ router.post("/endpoint", async (req, res) => {
     const { flow_token, data, action, screen } = decryptedBody;
     console.log("📩 Flow:", JSON.stringify({ action, screen }, null, 2));
 
+    // ✅ FIX 3: Encrypted ping
     if (action === "ping") {
-      return res.status(200).send(encryptResponse({ data: { status: "active" } }, aesKey, iv));
+      console.log("🏓 Encrypted ping → pong");
+      return res.status(200).send(encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv));
     }
 
-    // ── INITIAL LOAD ──────────────────────────────────────
-    if (action === "navigate" && (!screen || screen === "")) {
-      console.log("📋 Initial load → ORDER_TYPE");
+    // ✅ FIX 4: INIT action OR navigate with empty screen → show ORDER_TYPE once
+    if (action === "INIT" || (action === "navigate" && (!screen || screen === ""))) {
+      console.log("📋 INIT → ORDER_TYPE");
       const respData = {
         screen: "ORDER_TYPE",
         data: {
@@ -95,74 +101,47 @@ router.post("/endpoint", async (req, res) => {
           total_amount:   data?.total_amount   || "Rs.0",
           error_messages: {},
           init_values:    {},
-        }
+        },
       };
       console.log("📤 Response:", JSON.stringify(respData));
       return res.status(200).send(encryptResponse(respData, aesKey, iv));
     }
 
+    // ── Extract phone from flow_token ─────────────────────
+    // flow_token format: "delivery_<phone>_<timestamp>"
     const tokenParts = (flow_token || "").split("_");
     const phone = tokenParts.length >= 2 ? tokenParts[1] : null;
     console.log(`📞 Phone: ${phone}`);
 
-    // ── ORDER_TYPE → route based on order_type ────────────
+    // ── ORDER_TYPE → data_exchange → route by order_type ──
+    // (This is the ONLY screen that hits server via data_exchange)
     if (screen === "ORDER_TYPE") {
       const orderType = data.order_type || "delivery";
       console.log(`📋 ORDER_TYPE → ${orderType}`);
       const commonData = {
-        customer_name:  data.customer_name  || "",
-        customer_phone: data.customer_phone || "",
+        customer_name:   data.customer_name   || "",
+        customer_phone:  data.customer_phone  || "",
         alternate_phone: data.alternate_phone || "",
-        order_type:     orderType,
-        cart_summary:   data.cart_summary   || "",
-        total_amount:   data.total_amount   || "",
+        order_type:      orderType,
+        cart_summary:    data.cart_summary    || "",
+        total_amount:    data.total_amount    || "",
       };
       if (orderType === "takeaway") {
+        console.log("📋 Routing → TAKEAWAY_ADDONS");
         return res.status(200).send(encryptResponse({ screen: "TAKEAWAY_ADDONS", data: commonData }, aesKey, iv));
       }
       if (orderType === "dine_in") {
+        console.log("📋 Routing → DINE_BOOKING");
         return res.status(200).send(encryptResponse({ screen: "DINE_BOOKING", data: commonData }, aesKey, iv));
       }
+      // delivery
+      console.log("📋 Routing → DELIVERY_ADDRESS");
       return res.status(200).send(encryptResponse({ screen: "DELIVERY_ADDRESS", data: commonData }, aesKey, iv));
     }
 
-    // ── DELIVERY_ADDRESS → DELIVERY_KMS ──────────────────
-    if (screen === "DELIVERY_ADDRESS") {
-      console.log("📋 DELIVERY_ADDRESS → DELIVERY_KMS");
-      return res.status(200).send(encryptResponse({
-        screen: "DELIVERY_KMS",
-        data: { ...data }
-      }, aesKey, iv));
-    }
-
-    // ── DELIVERY_KMS → DELIVERY_ADDONS ───────────────────
-    if (screen === "DELIVERY_KMS") {
-      console.log("📋 DELIVERY_KMS → DELIVERY_ADDONS");
-      return res.status(200).send(encryptResponse({
-        screen: "DELIVERY_ADDONS",
-        data: { ...data }
-      }, aesKey, iv));
-    }
-
-    // ── DELIVERY_ADDONS → DELIVERY_SUMMARY ───────────────
-    if (screen === "DELIVERY_ADDONS") {
-      console.log("📋 DELIVERY_ADDONS → DELIVERY_SUMMARY");
-      return res.status(200).send(encryptResponse({
-        screen: "DELIVERY_SUMMARY",
-        data: { ...data, selected_addons: data.selected_addons || [], special_instructions: data.special_instructions || "" }
-      }, aesKey, iv));
-    }
-
-    // ── TAKEAWAY_ADDONS → TAKEAWAY_SUMMARY ───────────────
-    if (screen === "TAKEAWAY_ADDONS") {
-      console.log("📋 TAKEAWAY_ADDONS → TAKEAWAY_SUMMARY");
-      return res.status(200).send(encryptResponse({
-        screen: "TAKEAWAY_SUMMARY",
-        data: { ...data, selected_addons: data.selected_addons || [], special_instructions: data.special_instructions || "", pickup_time: data.pickup_time || "" }
-      }, aesKey, iv));
-    }
-
     // ── COMPLETE ──────────────────────────────────────────
+    // Triggered when user taps "Confirm Order" on summary screens
+    // DELIVERY_SUMMARY, TAKEAWAY_SUMMARY, DINE_BOOKING all send action=complete
     if (action === "complete") {
       console.log("✅ Flow COMPLETE!");
       console.log("📦 Data:", JSON.stringify(data, null, 2));
@@ -175,20 +154,26 @@ router.post("/endpoint", async (req, res) => {
         pickup_time,
       } = data;
 
-      const full_address = order_type === "delivery"
-        ? [delivery_address, pincode ? `- ${pincode}` : null].filter(Boolean).join(" ")
-        : order_type === "takeaway" ? `Take Away | Pickup: ${pickup_time || "ASAP"}` : "Dine In";
+      const full_address =
+        order_type === "delivery"
+          ? [delivery_address, pincode ? `- ${pincode}` : null].filter(Boolean).join(" ")
+          : order_type === "takeaway"
+          ? `Take Away | Pickup: ${pickup_time || "ASAP"}`
+          : "Dine In";
 
       const addonList  = Array.isArray(selected_addons) ? selected_addons : [];
-      const addonItems = addonList.map(id => ADDON_PRICES[id]).filter(Boolean);
+      const addonItems = addonList.map((id) => ADDON_PRICES[id]).filter(Boolean);
       const addonTotal = addonItems.reduce((s, a) => s + a.price, 0);
       const isDelivery = order_type === "delivery";
       const deliveryCh = isDelivery ? (within_five_km === "yes" ? 100 : 150) : 0;
 
+      // ── Fetch session ─────────────────────────────────
       let session = await Session.findOne({ phoneNumber: phone });
       if (!session) {
-        console.error("❌ Session not found:", phone);
-        return res.status(200).send(encryptResponse({ screen: "SUCCESS", data: { status: "error" } }, aesKey, iv));
+        console.error("❌ Session not found for phone:", phone);
+        return res.status(200).send(
+          encryptResponse({ screen: "SUCCESS", data: { status: "error" } }, aesKey, iv)
+        );
       }
 
       const cartTotal  = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
@@ -205,37 +190,42 @@ router.post("/endpoint", async (req, res) => {
         : "Free";
 
       const addonText = addonItems.length > 0
-        ? addonItems.map(a => `${a.name} (Rs.${a.price})`).join(", ")
+        ? addonItems.map((a) => `${a.name} (Rs.${a.price})`).join(", ")
         : "";
 
-      const tableInfo = order_type === "dine_in"
-        ? `\n👥 *People:* ${table_persons}\n📅 *Date:* ${table_date}\n🕐 *Time:* ${table_time}\n🪑 *Seating:* ${table_seating === "ac" ? "❄️ AC" : "🌿 Non-AC"}`
-        : order_type === "takeaway" ? `\n🕐 *Pickup Time:* ${pickup_time}` : "";
+      const tableInfo =
+        order_type === "dine_in"
+          ? `\n👥 *People:* ${table_persons}\n📅 *Date:* ${table_date}\n🕐 *Time:* ${table_time}\n🪑 *Seating:* ${table_seating === "ac" ? "❄️ AC" : "🌿 Non-AC"}`
+          : order_type === "takeaway"
+          ? `\n🕐 *Pickup Time:* ${pickup_time}`
+          : "";
 
+      // ── Save to session ───────────────────────────────
       session.deliveryData = {
-        name: customer_name || "Customer",
-        phone: customer_phone || phone,
-        alternate_phone: alternate_phone || "",
-        address: full_address,
+        name:                 customer_name     || "Customer",
+        phone:                customer_phone    || phone,
+        alternate_phone:      alternate_phone   || "",
+        address:              full_address,
         order_type,
-        delivery_time: "asap",
-        table_persons: table_persons || "",
-        table_date: table_date || "",
-        table_time: table_time || "",
-        table_seating: table_seating || "",
-        pickup_time: pickup_time || "",
-        addons: addonItems,
-        addon_total: addonTotal,
-        delivery_charge: deliveryCh,
-        gst_amount: gstAmount,
+        delivery_time:        "asap",
+        table_persons:        table_persons     || "",
+        table_date:           table_date        || "",
+        table_time:           table_time        || "",
+        table_seating:        table_seating     || "",
+        pickup_time:          pickup_time       || "",
+        addons:               addonItems,
+        addon_total:          addonTotal,
+        delivery_charge:      deliveryCh,
+        gst_amount:           gstAmount,
         special_instructions: special_instructions || "",
-        grand_total: grandTotal,
+        grand_total:          grandTotal,
       };
       session.state = "PAYMENT_SELECT";
       session.markModified("deliveryData");
       await session.save();
-      console.log(`✅ Session saved | Total: Rs.${grandTotal}`);
+      console.log(`✅ Session saved | Grand Total: Rs.${grandTotal}`);
 
+      // ── Build bill text ───────────────────────────────
       const isDineIn = order_type === "dine_in";
       const billText =
         (isDineIn ? `✅ *Table Booking Confirmed!*\n\n` : `🧾 *Order Bill Summary*\n\n`) +
@@ -255,6 +245,7 @@ router.post("/endpoint", async (req, res) => {
         `💰 *Grand Total: Rs.${grandTotal}*\n\n` +
         `Select payment method:`;
 
+      // ── Send payment buttons ──────────────────────────
       if (order_type === "delivery") {
         await sendButtons(phone, billText, [
           { id: "PAY_COD",  title: "💵 Cash on Delivery" },
@@ -268,24 +259,29 @@ router.post("/endpoint", async (req, res) => {
           { id: "PAY_CARD", title: "💳 Card Payment"      },
         ]);
       } else {
+        // dine_in
         await sendButtons(phone, billText, [
           { id: "PAY_REST", title: "🍽️ Pay at Restaurant" },
-          { id: "PAY_UPI",  title: "📲 UPI Payment"      },
-          { id: "PAY_CARD", title: "💳 Card Payment"      },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"       },
+          { id: "PAY_CARD", title: "💳 Card Payment"       },
         ]);
       }
 
+      // ✅ Close the flow
       return res.status(200).send(
         encryptResponse({ screen: "SUCCESS", data: { status: "payment_pending" } }, aesKey, iv)
       );
     }
 
-    console.log("⚠️ Unhandled:", { action, screen });
-    return res.status(200).send(encryptResponse({ data: { status: "active" } }, aesKey, iv));
+    // ── Unhandled fallback ────────────────────────────────
+    console.log("⚠️ Unhandled action/screen:", { action, screen });
+    return res.status(200).send(
+      encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv)
+    );
 
   } catch (err) {
     console.error("❌ Flow error:", err.message, err.stack);
-    return res.status(200).json({ error: "Server Error" });
+    return res.status(200).json({ version: "3.0", error: "Server Error" });
   }
 });
 

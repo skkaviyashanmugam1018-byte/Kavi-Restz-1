@@ -109,6 +109,9 @@ async function sendCatalogueMessage(to) {
 }
 
 // ─── Send WhatsApp Flow ───────────────────────────────────
+// ✅ FIX: Removed flow_action and flow_action_payload
+// Meta will send INIT action → server responds with ORDER_TYPE screen
+// This prevents double trigger (was triggering twice before)
 async function sendDeliveryFlow(to, cartSummary, totalAmount) {
   try {
     const flowToken = `delivery_${to}_${Date.now()}`;
@@ -119,7 +122,9 @@ async function sendDeliveryFlow(to, cartSummary, totalAmount) {
         interactive: {
           type: "flow",
           header: { type: "text", text: "📦 Order Details" },
-          body: { text: `Your cart total: *Rs.${totalAmount}*\n\nFill your delivery details below:` },
+          body: {
+            text: `Your cart total: *Rs.${totalAmount}*\n\nFill your delivery details below:`,
+          },
           footer: { text: "Kavi Chettinadu Restaurant" },
           action: {
             name: "flow",
@@ -128,18 +133,8 @@ async function sendDeliveryFlow(to, cartSummary, totalAmount) {
               flow_token: flowToken,
               flow_id: process.env.FLOW_ID,
               flow_cta: "Enter Delivery Details",
-              flow_action: "navigate",
-              flow_action_payload: {
-                screen: "ORDER_TYPE",
-                data: {
-                  cart_summary:   cartSummary || "",
-                  total_amount:   `Rs.${totalAmount}`,
-                  customer_name:  "",
-                  customer_phone: "",
-                  error_messages: {},
-                  init_values:    {},
-                },
-              },
+              // ✅ No flow_action / flow_action_payload here
+              // Meta sends INIT → endpoint returns ORDER_TYPE → once only
             },
           },
         },
