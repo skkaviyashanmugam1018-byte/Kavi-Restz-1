@@ -166,9 +166,6 @@ const CATALOGUE_PRICE_MAP = {
   EGG008:    { name: "Egg Masala",                 price: 120  },
 };
 
-// ═══════════════════════════════════════════════════════════
-// MENU DATA
-// ═══════════════════════════════════════════════════════════
 const MENU = {
   soup:          { label: "🍲 Soup",          items: [
     { id: "hot_sour_veg_soup",   name: "Hot & Sour Veg Soup",   price: 80  },
@@ -215,12 +212,12 @@ const MENU = {
     { id: "prawns_tikka",    name: "Prawns Tikka",           price: 200 },
   ]},
   fried_chicken: { label: "🍗 Fried Chicken", items: [
-    { id: "bucket_5pcs",    name: "Bucket 5pcs",            price: 450 },
-    { id: "bucket_10pcs",   name: "Bucket 10pcs",           price: 450 },
-    { id: "lolipop_5pcs",   name: "Lolipop 5pcs",           price: 250 },
-    { id: "wings_5pcs",     name: "Wings 5pcs",             price: 250 },
-    { id: "boneless_strips", name: "Boneless Strips 5pcs",  price: 200 },
-    { id: "popcorn",         name: "Popcorn Chicken",       price: 160 },
+    { id: "bucket_5pcs",     name: "Bucket 5pcs",           price: 450 },
+    { id: "bucket_10pcs",    name: "Bucket 10pcs",          price: 450 },
+    { id: "lolipop_5pcs",    name: "Lolipop 5pcs",          price: 250 },
+    { id: "wings_5pcs",      name: "Wings 5pcs",            price: 250 },
+    { id: "boneless_strips",  name: "Boneless Strips 5pcs", price: 200 },
+    { id: "popcorn",          name: "Popcorn Chicken",      price: 160 },
   ]},
   briyani:       { label: "🍛 Briyani",        items: [
     { id: "mutton_briyani",  name: "Mutton Biriyani",        price: 280 },
@@ -354,14 +351,12 @@ const MENU = {
 
 const ALL_ITEMS = [];
 for (const [catKey, cat] of Object.entries(MENU)) {
-  for (const item of cat.items) {
-    ALL_ITEMS.push({ ...item, catKey, catLabel: cat.label });
-  }
+  for (const item of cat.items) ALL_ITEMS.push({ ...item, catKey, catLabel: cat.label });
 }
 
 function findItem(itemId) {
   for (const cat of Object.values(MENU)) {
-    const item = cat.items.find((i) => i.id === itemId);
+    const item = cat.items.find(i => i.id === itemId);
     if (item) return item;
   }
   return null;
@@ -369,18 +364,15 @@ function findItem(itemId) {
 
 function normalizeQuery(str) {
   return str.toLowerCase().trim()
-    .replace(/biryani/g, "biriyani")
-    .replace(/briyani/g, "biriyani")
-    .replace(/bryani/g, "biriyani")
-    .replace(/noodle$/g, "noodles")
-    .replace(/prawn$/g, "prawns")
-    .replace(/chiken/g, "chicken")
+    .replace(/biryani/g, "biriyani").replace(/briyani/g, "biriyani")
+    .replace(/bryani/g, "biriyani").replace(/noodle$/g, "noodles")
+    .replace(/prawn$/g, "prawns").replace(/chiken/g, "chicken")
     .replace(/muttan/g, "mutton");
 }
 
 function searchItems(query) {
   const q = normalizeQuery(query);
-  return ALL_ITEMS.filter((item) => {
+  return ALL_ITEMS.filter(item => {
     const name = normalizeQuery(item.name);
     const cat  = normalizeQuery(item.catLabel);
     const words = q.split(" ").filter(w => w.length > 2);
@@ -400,7 +392,7 @@ function buildCartMsg(cart) {
 }
 
 function buildCartSummary(cart) {
-  return cart.map((i) => `${i.name} x${i.qty}`).join(", ");
+  return cart.map(i => `${i.name} x${i.qty}`).join(", ");
 }
 
 const GST_PERCENT = 5;
@@ -410,8 +402,13 @@ function getDeliveryCharge(orderType, withinFiveKm) {
   return withinFiveKm === "yes" ? 100 : 150;
 }
 
+// ✅ FIX 1: sendWelcome — image caption includes greeting, list comes after
 async function sendWelcome(to) {
-  await sendImage(to, "https://kavirestaurant.in/wp-content/uploads/2026/05/logo-01-scaled.jpg", "🍛 *Kavi Chettinadu Restaurant*\n_Taste The Tradition_ ✨");
+  await sendImage(
+    to,
+    "https://kavirestaurant.in/wp-content/uploads/2026/05/logo-01-scaled.jpg",
+    "🍛 *Welcome to Kavi Chettinadu Restaurant!*\n_Taste The Tradition_ ✨"
+  );
   await sendList(
     to,
     "🍛 Kavi Chettinadu",
@@ -436,9 +433,7 @@ async function sendMainMenu(to, page = 0) {
   const pageCategories = allCategories.slice(start, start + PAGE_SIZE);
   const hasMore = allCategories.length > start + PAGE_SIZE;
   const rows = pageCategories.map(([key, cat]) => ({
-    id: `CAT_${key}`,
-    title: t24(cat.label),
-    description: `${cat.items.length} items`,
+    id: `CAT_${key}`, title: t24(cat.label), description: `${cat.items.length} items`,
   }));
   if (hasMore) rows.push({ id: `MENU_PAGE_${page + 1}`, title: "➡️ More Categories", description: "See more" });
   if (page > 0) rows.push({ id: `MENU_PAGE_${page - 1}`, title: "⬅️ Previous", description: "Go back" });
@@ -452,22 +447,19 @@ async function sendCategoryItems(to, catKey, page = 0) {
   const start = page * PAGE_SIZE;
   const pageItems = cat.items.slice(start, start + PAGE_SIZE);
   const hasMore = cat.items.length > start + PAGE_SIZE;
-  const rows = pageItems.map((item) => ({ id: `ITEM_${item.id}`, title: t24(item.name), description: `Rs.${item.price}` }));
+  const rows = pageItems.map(item => ({ id: `ITEM_${item.id}`, title: t24(item.name), description: `Rs.${item.price}` }));
   if (hasMore) rows.push({ id: `MORE_${catKey}_${page + 1}`, title: "➡️ More Items", description: "See more" });
   if (page > 0) rows.push({ id: `MORE_${catKey}_${page - 1}`, title: "⬅️ Previous", description: "Go back" });
   await sendList(to, t24(cat.label), "Select an item to add to cart:", "Choose Item", [{ title: t24(cat.label), rows }]);
 }
 
 async function sendQuantitySelect(to, item) {
-  await sendText(to, `*${item.name}*\n💰 Price: Rs.${item.price}\n\n📝 *Enter quantity:*\nType any number (1, 2, 3, 4, 5...) and send!`);
-  await sendButtons(to,
-    "Or tap a quick option:",
-    [
-      { id: `QTY_1___${item.id}`, title: "1️⃣  Qty: 1" },
-      { id: `QTY_2___${item.id}`, title: "2️⃣  Qty: 2" },
-      { id: `QTY_3___${item.id}`, title: "3️⃣  Qty: 3" },
-    ]
-  );
+  await sendText(to, `*${item.name}*\n💰 Price: Rs.${item.price}\n\n📝 *Enter quantity:*\nType any number (1, 2, 3...) and send!`);
+  await sendButtons(to, "Or tap a quick option:", [
+    { id: `QTY_1___${item.id}`, title: "1️⃣  Qty: 1" },
+    { id: `QTY_2___${item.id}`, title: "2️⃣  Qty: 2" },
+    { id: `QTY_3___${item.id}`, title: "3️⃣  Qty: 3" },
+  ]);
 }
 
 async function sendAfterAddToCart(to, cart) {
@@ -486,41 +478,33 @@ async function sendAfterAddToCart(to, cart) {
 // PLACE ORDER
 // ═══════════════════════════════════════════════════════════
 async function placeOrder(from, session) {
-  // ✅ FIX 2: Guard — cart empty or deliveryData missing → block stale button clicks
+  // ✅ FIX 2: Guard against stale button clicks
   if (!session.cart || session.cart.length === 0) {
-    console.log("⚠️ placeOrder blocked — cart is empty for:", from);
-    await sendButtons(from,
-      "❌ *Your cart is empty!*\n\nPlease start a new order.",
-      [
-        { id: "VIEW_CATALOGUE", title: "🖼️ View Catalogue" },
-        { id: "BROWSE_MENU",    title: "📋 Browse Menu"    },
-      ]
-    );
+    console.log("⚠️ placeOrder blocked — cart empty for:", from);
+    await sendButtons(from, "❌ *Your cart is empty!*\n\nPlease start a new order.", [
+      { id: "VIEW_CATALOGUE", title: "🖼️ View Catalogue" },
+      { id: "BROWSE_MENU",    title: "📋 Browse Menu"    },
+    ]);
     return;
   }
-
   if (!session.deliveryData || !session.deliveryData.grand_total) {
     console.log("⚠️ placeOrder blocked — no deliveryData for:", from);
-    await sendButtons(from,
-      "❌ *Order details not found!*\n\nPlease start a new order.",
-      [
-        { id: "VIEW_CATALOGUE", title: "🖼️ View Catalogue" },
-        { id: "BROWSE_MENU",    title: "📋 Browse Menu"    },
-      ]
-    );
+    await sendButtons(from, "❌ *Order details missing!*\n\nPlease start a new order.", [
+      { id: "VIEW_CATALOGUE", title: "🖼️ View Catalogue" },
+      { id: "BROWSE_MENU",    title: "📋 Browse Menu"    },
+    ]);
     return;
   }
 
   const {
     name, phone, alternate_phone, address, order_type,
-    paymentMethod, addons, addon_total,
-    delivery_charge, gst_amount, grand_total,
-    table_persons, table_date, table_time, table_seating,
-    special_instructions,
+    paymentMethod, addons, addon_total, delivery_charge,
+    gst_amount, grand_total, table_persons, table_date,
+    table_time, table_seating, special_instructions,
   } = session.deliveryData;
 
   const cartTotal  = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const addonItems = (addons || []).map((a) => ({ name: a.name, price: a.price, quantity: 1 }));
+  const addonItems = (addons || []).map(a => ({ name: a.name, price: a.price, quantity: 1 }));
   const addonTotal = addon_total || 0;
   const isDelivery = order_type === "delivery";
   const delCharge  = delivery_charge ?? 0;
@@ -533,8 +517,8 @@ async function placeOrder(from, session) {
     order_type === "takeaway" ? "🥡 Take Away"     : "🍽️ Dine In";
 
   const payLabel =
-    paymentMethod === "PAY_COD"  ? "COD"  :
-    paymentMethod === "PAY_UPI"  ? "UPI"  :
+    paymentMethod === "PAY_COD"  ? "COD" :
+    paymentMethod === "PAY_UPI"  ? "UPI" :
     paymentMethod === "PAY_REST" ? "Pay at Restaurant" : "Card";
 
   const tableInfo = order_type === "dine_in" && table_persons
@@ -542,32 +526,23 @@ async function placeOrder(from, session) {
     : "";
 
   const allItems = [
-    ...session.cart.map((i) => ({ name: i.name, price: i.price, quantity: i.qty })),
+    ...session.cart.map(i => ({ name: i.name, price: i.price, quantity: i.qty })),
     ...addonItems,
   ];
 
   const newOrder = new Order({
-    orderId,
-    phone:         phone || from,
-    name:          name  || "Customer",
-    address:       address || orderTypeLabel,
-    items:         allItems,
-    totalAmount:   finalTotal,
-    paymentMethod: payLabel,
-    status:        "confirmed",
+    orderId, phone: phone || from, name: name || "Customer",
+    address: address || orderTypeLabel, items: allItems,
+    totalAmount: finalTotal, paymentMethod: payLabel, status: "confirmed",
   });
   await newOrder.save();
   console.log(`✅ Order: ${orderId} | Total: Rs.${finalTotal}`);
 
-  session.cart         = [];
-  session.deliveryData = {};
-  session.deliveryStep = null;
-  session.state        = "WELCOME";
-  session.markModified("cart");
-  session.markModified("deliveryData");
+  session.cart = []; session.deliveryData = {}; session.deliveryStep = null; session.state = "WELCOME";
+  session.markModified("cart"); session.markModified("deliveryData");
   await session.save();
 
-  const itemsList = allItems.map((i) => `• ${i.name} × ${i.quantity} = Rs.${i.price * i.quantity}`).join("\n");
+  const itemsList = allItems.map(i => `• ${i.name} × ${i.quantity} = Rs.${i.price * i.quantity}`).join("\n");
 
   await sendButtons(from,
     `🎉 *Order Placed Successfully!*\n\n` +
@@ -594,18 +569,14 @@ async function placeOrder(from, session) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-// HANDLE CATALOGUE ORDER
-// ═══════════════════════════════════════════════════════════
 async function handleCatalogueOrder(from, session, catalogueOrder) {
   const items = catalogueOrder?.product_items || [];
   for (const item of items) {
     const retailerId    = item.product_retailer_id;
     const catalogueItem = CATALOGUE_PRICE_MAP[retailerId];
-    const existing      = session.cart.findIndex((c) => c.itemId === retailerId);
-    if (existing >= 0) {
-      session.cart[existing].qty += item.quantity || 1;
-    } else {
+    const existing      = session.cart.findIndex(c => c.itemId === retailerId);
+    if (existing >= 0) { session.cart[existing].qty += item.quantity || 1; }
+    else {
       session.cart.push({
         itemId: retailerId,
         name:   catalogueItem?.name  || retailerId.replace(/_/g, " "),
@@ -646,10 +617,8 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
 
     console.log(`📥 From: ${from} | Input: ${input} | State: ${session.state}`);
 
-    // ── CATALOGUE ORDER ───────────────────────────────────
     if (catalogueOrder) { await handleCatalogueOrder(from, session, catalogueOrder); return; }
 
-    // ── EXIT ──────────────────────────────────────────────
     if (["exit", "bye", "quit"].includes(input)) {
       session.state = "WELCOME"; session.cart = []; session.deliveryData = {}; session.deliveryStep = null;
       session.markModified("cart"); session.markModified("deliveryData");
@@ -658,7 +627,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── GREETING ──────────────────────────────────────────
     if (["hi", "hello", "hey", "start", "menu", "/menu", "/start", "browse menu"].includes(input)) {
       session.state = "MAIN_MENU"; session.cart = []; session.deliveryData = {}; session.deliveryStep = null;
       session.markModified("cart"); session.markModified("deliveryData");
@@ -667,14 +635,12 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── VIEW CATALOGUE ────────────────────────────────────
+    // ✅ FIX 4: VIEW_CATALOGUE — NO extra image before catalogue
     if (input === "VIEW_CATALOGUE") {
       session.state = "CATALOGUE";
       await session.save();
-      await sendImage(from, "https://kavirestaurant.in/wp-content/uploads/2026/05/logo-01-scaled.jpg", "🍛 Kavi Chettinadu — Browse our menu!");
       const sent = await sendCatalogueMessage(from);
       if (!sent) {
-        await sendText(from, "🖼️ Showing menu instead!");
         await sendMainMenu(from, 0);
         session.state = "CATEGORY_SELECT";
         await session.save();
@@ -682,7 +648,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── SEARCH ────────────────────────────────────────────
     if (["search", "/search"].includes(input)) {
       session.state = "SEARCHING";
       await session.save();
@@ -694,15 +659,14 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       const results = searchItems(rawInput);
       if (results.length === 0) {
         await sendButtons(from, `❌ No results for "*${rawInput}*"\n\nTry another name!`, [
-          { id: "search",      title: "🔍 Search Again"  },
-          { id: "BROWSE_MENU", title: "📋 Browse Menu"   },
-          { id: "exit",        title: "❌ Exit"           },
+          { id: "search",      title: "🔍 Search Again" },
+          { id: "BROWSE_MENU", title: "📋 Browse Menu"  },
+          { id: "exit",        title: "❌ Exit"          },
         ]);
         return;
       }
-      const rows = results.map((item) => ({
-        id: `ITEM_${item.id}`,
-        title: t24(item.name),
+      const rows = results.map(item => ({
+        id: `ITEM_${item.id}`, title: t24(item.name),
         description: `Rs.${item.price} | ${t24(item.catLabel)}`,
       }));
       await sendList(from, "🔍 Search Results", `Found ${results.length} items for "${rawInput}":`, "View Items", [{ title: "Search Results", rows }]);
@@ -711,14 +675,12 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── CONTACT ───────────────────────────────────────────
     if (["contact us", "contact", "/contact", "/contact us", "📞 contact us"].includes(input)) {
       await sendButtons(from,
         `📞 *Kavi Chettinadu Restaurant*\n\n` +
         `📍 14/12A1, Kattupillaiyar Kovil Street\nRameswaram - 623526\n\n` +
         `📞 *95859 60612*\n📞 *95859 60613*\n\n` +
-        `⏰ Open: 12:00 PM – 10:30 PM\n\n` +
-        `🌐 kavirestaurant.in`,
+        `⏰ Open: 12:00 PM – 10:30 PM\n\n🌐 kavirestaurant.in`,
         [
           { id: "VIEW_CATALOGUE", title: "🖼️ View Catalogue" },
           { id: "BROWSE_MENU",    title: "📋 Browse Menu"    },
@@ -728,7 +690,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── BROWSE MENU ───────────────────────────────────────
     if (["BROWSE_MENU", "ADD_MORE", "MAIN_MENU", "browse_menu"].includes(input)) {
       session.state = "CATEGORY_SELECT";
       await session.save();
@@ -736,7 +697,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── MENU PAGINATION ───────────────────────────────────
     if (input?.startsWith("MENU_PAGE_")) {
       const page = parseInt(input.replace("MENU_PAGE_", ""));
       session.state = "CATEGORY_SELECT";
@@ -745,7 +705,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── CATEGORY SELECT ───────────────────────────────────
     if (input?.startsWith("CAT_")) {
       const catKey = input.replace("CAT_", "");
       session.currentCategory = catKey;
@@ -755,7 +714,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── PAGINATION ────────────────────────────────────────
     if (input?.startsWith("MORE_")) {
       const parts  = input.split("_");
       const page   = parseInt(parts[parts.length - 1]);
@@ -766,7 +724,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── ITEM SELECT ───────────────────────────────────────
     if (input?.startsWith("ITEM_")) {
       const itemId = input.replace("ITEM_", "");
       const item   = findItem(itemId);
@@ -779,26 +736,20 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── MANUAL QUANTITY ───────────────────────────────────
     if (session.state === "QUANTITY_SELECT" && session.pendingItem && rawInput && /^\d+$/.test(rawInput)) {
-      const qty  = parseInt(rawInput);
+      const qty = parseInt(rawInput);
       const item = session.pendingItem;
-      if (qty < 1 || qty > 20) {
-        await sendText(from, "⚠️ Please enter a quantity between 1 and 20.");
-        return;
-      }
-      const existing = session.cart.findIndex((c) => c.itemId === item.id);
+      if (qty < 1 || qty > 20) { await sendText(from, "⚠️ Please enter a quantity between 1 and 20."); return; }
+      const existing = session.cart.findIndex(c => c.itemId === item.id);
       if (existing >= 0) { session.cart[existing].qty += qty; }
       else { session.cart.push({ itemId: item.id, name: item.name, price: item.price, qty }); }
-      session.pendingItem = null;
-      session.state = "CART";
+      session.pendingItem = null; session.state = "CART";
       session.markModified("cart");
       await session.save();
       await sendAfterAddToCart(from, session.cart);
       return;
     }
 
-    // ── QUANTITY SELECT ───────────────────────────────────
     if (input?.startsWith("QTY_")) {
       const withoutPrefix = input.replace("QTY_", "");
       const sepIdx = withoutPrefix.indexOf("___");
@@ -806,18 +757,16 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       const itemId = withoutPrefix.substring(sepIdx + 3);
       const item   = findItem(itemId) || session.pendingItem;
       if (!item) { await sendText(from, "❌ Error. Please try again."); return; }
-      const existing = session.cart.findIndex((c) => c.itemId === item.id);
+      const existing = session.cart.findIndex(c => c.itemId === item.id);
       if (existing >= 0) { session.cart[existing].qty += qty; }
       else { session.cart.push({ itemId: item.id, name: item.name, price: item.price, qty }); }
-      session.pendingItem = null;
-      session.state = "CART";
+      session.pendingItem = null; session.state = "CART";
       session.markModified("cart");
       await session.save();
       await sendAfterAddToCart(from, session.cart);
       return;
     }
 
-    // ── VIEW CART ─────────────────────────────────────────
     if (["VIEW_CART", "/cart"].includes(input)) {
       const cartMsg = buildCartMsg(session.cart);
       if (!session.cart || session.cart.length === 0) {
@@ -835,11 +784,8 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── CLEAR CART ────────────────────────────────────────
     if (input === "CLEAR_CART") {
-      session.cart = [];
-      session.markModified("cart");
-      await session.save();
+      session.cart = []; session.markModified("cart"); await session.save();
       await sendButtons(from, "🗑️ Cart cleared!", [
         { id: "VIEW_CATALOGUE", title: "🖼️ View Catalogue" },
         { id: "BROWSE_MENU",    title: "📋 Browse Menu"    },
@@ -847,7 +793,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── PLACE ORDER ───────────────────────────────────────
     if (["PLACE_ORDER", "PLACE_ORDER_FLOW", "/order"].includes(input)) {
       if (!session.cart || session.cart.length === 0) {
         await sendButtons(from, "❌ Your cart is empty!", [
@@ -864,18 +809,21 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── FLOW COMPLETE — nfm_reply ─────────────────────────
+    // ✅ FIX 3: Stale flow — ignore if session not in AWAITING_FLOW
     if (input === "__FLOW_COMPLETE__") {
+      if (session.state !== "AWAITING_FLOW") {
+        console.log("⚠️ Stale flow complete ignored | State:", session.state);
+        return;
+      }
+
       const flowData = interactiveReply?.flowData || {};
       console.log("✅ Flow complete:", JSON.stringify(flowData, null, 2));
 
       const {
         customer_name, customer_phone, alternate_phone,
-        delivery_address, pincode,
-        order_type, within_five_km,
+        delivery_address, pincode, order_type, within_five_km,
         table_persons, table_date, table_time, table_seating,
-        selected_addons, special_instructions,
-        pickup_time,
+        selected_addons, special_instructions, pickup_time,
       } = flowData;
 
       const full_address =
@@ -885,9 +833,8 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
           ? `Take Away | Pickup: ${pickup_time || "ASAP"}`
           : "Dine In";
 
-      const cartTotal  = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
-      const addonList  = Array.isArray(selected_addons) ? selected_addons : [];
-
+      const cartTotal      = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+      const addonList      = Array.isArray(selected_addons) ? selected_addons : [];
       const ADDON_PRICES_MAP = {
         raita:       { name: "Raita",         price: 30 },
         pickle:      { name: "Pickle",        price: 20 },
@@ -897,8 +844,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         curd_rice:   { name: "Curd Rice",     price: 60 },
         sweet:       { name: "Sweet (Kheer)", price: 50 },
       };
-
-      const addonItems     = addonList.map((id) => ADDON_PRICES_MAP[id]).filter(Boolean);
+      const addonItems     = addonList.map(id => ADDON_PRICES_MAP[id]).filter(Boolean);
       const addonTotal     = addonItems.reduce((s, a) => s + a.price, 0);
       const isDelivery     = order_type === "delivery";
       const deliveryCharge = getDeliveryCharge(order_type, within_five_km);
@@ -915,8 +861,8 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         : "Free";
 
       const addonText = addonItems.length > 0
-        ? addonItems.map((a) => `${a.name} (Rs.${a.price})`).join(", ")
-        : "None";
+        ? addonItems.map(a => `${a.name} (Rs.${a.price})`).join(", ")
+        : "";
 
       const tableInfo = order_type === "dine_in" && table_persons
         ? `\n👥 *People:* ${table_persons}\n📅 *Date:* ${table_date}\n🕐 *Time:* ${table_time}\n🪑 *Seating:* ${table_seating === "ac" ? "❄️ AC" : "🌿 Non-AC"}`
@@ -924,62 +870,65 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         ? `\n🕐 *Pickup Time:* ${pickup_time || "ASAP"}`
         : "";
 
+      // ✅ FIX 5: Full itemized bill with actual cart items
+      const itemsList = session.cart.map(i => `• ${i.name} × ${i.qty} = Rs.${i.price * i.qty}`).join("\n");
+
       session.deliveryData = {
-        name:                 customer_name     || "Customer",
-        phone:                customer_phone    || from,
-        alternate_phone:      alternate_phone   || "",
-        address:              full_address,
-        order_type:           order_type        || "delivery",
-        delivery_time:        "asap",
-        scheduled_time:       "",
-        table_persons:        table_persons     || "",
-        table_date:           table_date        || "",
-        table_time:           table_time        || "",
-        table_seating:        table_seating     || "",
-        pickup_time:          pickup_time       || "",
-        addons:               addonItems,
-        addon_total:          addonTotal,
-        delivery_charge:      deliveryCharge,
-        gst_amount:           gstAmount,
-        special_instructions: special_instructions || "",
-        grand_total:          grandTotal,
+        name: customer_name || "Customer", phone: customer_phone || from,
+        alternate_phone: alternate_phone || "", address: full_address,
+        order_type: order_type || "delivery", delivery_time: "asap",
+        table_persons: table_persons || "", table_date: table_date || "",
+        table_time: table_time || "", table_seating: table_seating || "",
+        pickup_time: pickup_time || "", addons: addonItems, addon_total: addonTotal,
+        delivery_charge: deliveryCharge, gst_amount: gstAmount,
+        special_instructions: special_instructions || "", grand_total: grandTotal,
       };
       session.state = "PAYMENT_SELECT";
       session.markModified("deliveryData");
       await session.save();
       console.log(`✅ Session saved | Grand Total: Rs.${grandTotal}`);
 
-      await sendButtons(from,
-        `🧾 *Order Bill Summary*\n\n` +
+      const isDineIn = order_type === "dine_in";
+      const billText =
+        (isDineIn ? `✅ *Table Booking Confirmed!*\n\n` : `🧾 *Order Bill Summary*\n\n`) +
         `👤 *Name:* ${customer_name}\n` +
         `📞 *Phone:* ${customer_phone}\n` +
         (alternate_phone ? `📞 *Alt:* ${alternate_phone}\n` : "") +
         `📍 *Address:* ${full_address}\n` +
         `🚚 *Type:* ${orderTypeLabel}${tableInfo}\n` +
-        (addonText !== "None" ? `🍱 *Add-ons:* ${addonText}\n` : "") +
+        (addonText ? `🍱 *Add-ons:* ${addonText}\n` : "") +
         (special_instructions ? `📝 *Note:* ${special_instructions}\n` : "") +
         `─────────────────\n` +
-        `🛒 *Items:* Rs.${cartTotal}\n` +
+        `🛒 *Items:*\n${itemsList}\n` +
+        `─────────────────\n` +
+        `🛒 *Subtotal:* Rs.${cartTotal}\n` +
         (addonTotal > 0 ? `🍱 *Add-ons:* Rs.${addonTotal}\n` : "") +
         `🚚 *Delivery:* ${deliveryLabel}\n` +
         `📊 *GST (${GST_PERCENT}%):* Rs.${gstAmount}\n` +
         `─────────────────\n` +
         `💰 *Grand Total: Rs.${grandTotal}*\n\n` +
-        `Select payment method:`,
-        [
+        `Select payment method:`;
+
+      const payButtons =
+        order_type === "delivery" ? [
           { id: "PAY_COD",  title: "💵 Cash on Delivery" },
           { id: "PAY_UPI",  title: "📲 UPI Payment"      },
           { id: "PAY_CARD", title: "💳 Card Payment"      },
-        ]
-      );
+        ] : order_type === "takeaway" ? [
+          { id: "PAY_COD",  title: "💵 Cash on Pickup"   },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"      },
+          { id: "PAY_CARD", title: "💳 Card Payment"      },
+        ] : [
+          { id: "PAY_REST", title: "🍽️ Pay at Restaurant" },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"       },
+          { id: "PAY_CARD", title: "💳 Card Payment"       },
+        ];
+
+      await sendButtons(from, billText, payButtons);
       return;
     }
 
-    // ══════════════════════════════════════════════════════
-    // ✅ FIX 1: AWAITING_UPI_ID — moved BEFORE payment block
-    // Previously nested inside PAY_UPI handler — so text
-    // messages never reached it. Now checked early.
-    // ══════════════════════════════════════════════════════
+    // ✅ FIX 1b: AWAITING_UPI_ID — checked BEFORE payment buttons block
     if (session.state === "AWAITING_UPI_ID" && rawInput && !rawInput.startsWith("/") && input !== "__FLOW_COMPLETE__") {
       const upiId = rawInput.trim();
       const total = session.deliveryData?.grand_total || 0;
@@ -991,33 +940,35 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       session.markModified("deliveryData");
       await session.save();
 
-      try {
-        const Razorpay = require("razorpay");
-        const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
-        const payLink = await rzp.paymentLink.create({
-          amount: total * 100, currency: "INR",
-          description: `Kavi Chettinadu - ${session.deliveryData?.name || "Customer"}`,
-          customer: { name: session.deliveryData?.name || "Customer", contact: session.deliveryData?.phone || from },
-          notify: { sms: false, email: false },
-          expire_by: Math.floor(Date.now() / 1000) + 300,
-          reminder_enable: false,
-        });
-        await sendText(from,
-          `✅ *UPI ID received:* ${upiId}\n\n` +
-          `💰 Amount: *Rs.${total}*\n\n` +
-          `🔗 *Click to Pay:* ${payLink.short_url}\n\n` +
-          `This will open PhonePe / GPay / Paytm payment page.\n` +
-          `⏰ Link valid for 5 minutes.`
-        );
-      } catch (rzpErr) {
-        console.error("❌ Razorpay error:", rzpErr.message);
+      // ✅ FIX — Check Razorpay keys before creating instance
+      if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+        console.error("❌ Razorpay keys missing in env!");
         const restUpiId = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
         await sendText(from,
-          `📲 *UPI Payment*\n\n` +
-          `Pay to: *${restUpiId}*\n` +
-          `💰 Amount: *Rs.${total}*\n\n` +
-          `After payment, confirm below.`
+          `📲 *UPI Payment*\n\nPay to: *${restUpiId}*\n💰 Amount: *Rs.${total}*\n\nAfter payment, confirm below.`
         );
+      } else {
+        try {
+          const Razorpay = require("razorpay");
+          const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+          const payLink = await rzp.paymentLink.create({
+            amount: total * 100, currency: "INR",
+            description: `Kavi Chettinadu - ${session.deliveryData?.name || "Customer"}`,
+            customer: { name: session.deliveryData?.name || "Customer", contact: session.deliveryData?.phone || from },
+            notify: { sms: false, email: false },
+            expire_by: Math.floor(Date.now() / 1000) + 300,
+            reminder_enable: false,
+          });
+          await sendText(from,
+            `✅ *UPI ID received:* ${upiId}\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay:* ${payLink.short_url}\n\n⏰ Link valid for 5 minutes.`
+          );
+        } catch (rzpErr) {
+          console.error("❌ Razorpay UPI error:", rzpErr.message);
+          const restUpiId = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
+          await sendText(from,
+            `📲 *UPI Payment*\n\nPay to: *${restUpiId}*\n💰 Amount: *Rs.${total}*\n\nAfter payment, confirm below.`
+          );
+        }
       }
       await sendButtons(from, "✅ Have you completed the payment?", [
         { id: "UPI_DONE", title: "✅ Payment Done"    },
@@ -1038,17 +989,18 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         session.markModified("deliveryData");
         await session.save();
         await sendText(from,
-          `📲 *UPI Payment*\n\n` +
-          `💰 Amount: *Rs.${total}*\n\n` +
-          `Please type your *UPI ID* below:\n` +
-          `(e.g. name@gpay, name@paytm, 9876543210@ybl)\n\n` +
-          `After entering UPI ID, you will be redirected to payment page.`
+          `📲 *UPI Payment*\n\n💰 Amount: *Rs.${total}*\n\nPlease type your *UPI ID* below:\n(e.g. name@gpay, name@paytm, 9876543210@ybl)`
         );
         return;
       }
 
       if (input === "PAY_CARD") {
         const total = session.deliveryData?.grand_total || 0;
+        if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+          await sendText(from, "💳 *Card payment will be collected at delivery/counter.*");
+          await placeOrder(from, session);
+          return;
+        }
         try {
           const Razorpay = require("razorpay");
           const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
@@ -1061,11 +1013,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
             reminder_enable: false,
           });
           await sendText(from,
-            `💳 *Card Payment*\n\n` +
-            `💰 Amount: *Rs.${total}*\n\n` +
-            `🔗 *Click to Pay:* ${payLink.short_url}\n\n` +
-            `Complete OTP verification and pay.\n` +
-            `⏰ Link valid for 10 minutes.`
+            `💳 *Card Payment*\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay:* ${payLink.short_url}\n\n⏰ Link valid for 10 minutes.`
           );
           await sendButtons(from, "✅ Have you completed the payment?", [
             { id: "UPI_DONE", title: "✅ Payment Done"    },
@@ -1079,12 +1027,11 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         return;
       }
 
-      // PAY_COD or PAY_REST → place order directly
+      // PAY_COD or PAY_REST
       await placeOrder(from, session);
       return;
     }
 
-    // ── CARD AT DELIVERY ──────────────────────────────────
     if (input === "CARD_COD") {
       session.deliveryData.paymentMethod = "PAY_CARD";
       session.state = "PAYMENT_SELECT";
@@ -1094,7 +1041,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── UPI DONE ──────────────────────────────────────────
     if (input === "UPI_DONE") {
       session.deliveryData.paymentMethod = "PAY_UPI";
       session.markModified("deliveryData");

@@ -4,13 +4,11 @@ const crypto  = require("crypto");
 const fs      = require("fs");
 const path    = require("path");
 const Session = require("../models/Session");
-const { sendButtons, sendText, sendImage } = require("../config/whatsapp");
+const { sendButtons, sendText } = require("../config/whatsapp");
 
 let privateKey;
 if (process.env.PRIVATE_KEY) {
-  privateKey = process.env.PRIVATE_KEY
-    .replace(/\\n/g, "\n")
-    .replace(/\\r/g, "");
+  privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n").replace(/\\r/g, "");
   console.log("🔑 Using PRIVATE_KEY from env, length:", privateKey.length);
 } else {
   privateKey = fs.readFileSync(path.join(__dirname, "../private.pem"), "utf8");
@@ -62,15 +60,13 @@ router.post("/endpoint", async (req, res) => {
     const body = req.body;
     console.log("📩 Flow endpoint | action:", body?.action || "encrypted");
 
-    // ✅ FIX 1: Unencrypted ping — correct format with version
+    // ✅ Unencrypted ping
     if (body?.action === "ping") {
-      console.log("🏓 Ping received → pong");
+      console.log("🏓 Ping → pong");
       return res.status(200).json({ version: "3.0", data: { status: "active" } });
     }
 
-    // ✅ FIX 2: Missing encryption fields — health check
     if (!body?.encrypted_aes_key || !body?.encrypted_flow_data || !body?.initial_vector) {
-      console.log("⚠️ Missing encryption fields → health check response");
       return res.status(200).json({ version: "3.0", data: { status: "active" } });
     }
 
@@ -85,36 +81,52 @@ router.post("/endpoint", async (req, res) => {
     const { flow_token, data, action, screen } = decryptedBody;
     console.log("📩 Flow:", JSON.stringify({ action, screen }, null, 2));
 
-    // ✅ FIX 3: Encrypted ping
+    // ✅ Encrypted ping
     if (action === "ping") {
       console.log("🏓 Encrypted ping → pong");
       return res.status(200).send(encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv));
     }
 
-    // ✅ FIX 4: INIT action OR navigate with empty screen → show ORDER_TYPE once
-    if (action === "INIT" || (action === "navigate" && (!screen || screen === ""))) {
-      console.log("📋 INIT → ORDER_TYPE");
-      const respData = {
-        screen: "ORDER_TYPE",
-        data: {
-          cart_summary:   data?.cart_summary   || "",
-          total_amount:   data?.total_amount   || "Rs.0",
-          error_messages: {},
-          init_values:    {},
-        },
-      };
-      console.log("📤 Response:", JSON.stringify(respData));
-      return res.status(200).send(encryptResponse(respData, aesKey, iv));
-    }
-
     // ── Extract phone from flow_token ─────────────────────
-    // flow_token format: "delivery_<phone>_<timestamp>"
+    // format: "delivery_<phone>_<timestamp>"
     const tokenParts = (flow_token || "").split("_");
     const phone = tokenParts.length >= 2 ? tokenParts[1] : null;
     console.log(`📞 Phone: ${phone}`);
 
-    // ── ORDER_TYPE → data_exchange → route by order_type ──
-    // (This is the ONLY screen that hits server via data_exchange)
+    // ✅ INIT — fetch cart from session for accurate summary
+    if (action === "INIT" || (action === "navigate" && (!screen || screen === ""))) {
+      console.log("📋 INIT → ORDER_TYPE");
+
+      // Fetch session to get real cart data
+      let cartSummary = "";
+      let totalAmount = "Rs.0";
+      if (phone) {
+        try {
+          const session = await Session.findOne({ phoneNumber: phone });
+          if (session && session.cart && session.cart.length > 0) {
+            cartSummary = session.cart.map(i => `${i.name} x${i.qty}`).join(", ");
+            const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+            totalAmount = `Rs.${total}`;
+          }
+        } catch (e) {
+          console.error("Session fetch error:", e.message);
+        }
+      }
+
+      const respData = {
+        screen: "ORDER_TYPE",
+        data: {
+          cart_summary:   cartSummary,
+          total_amount:   totalAmount,
+          error_messages: {},
+          init_values:    {},
+        },
+      };
+      console.log("📤 INIT Response:", JSON.stringify(respData));
+      return res.status(200).send(encryptResponse(respData, aesKey, iv));
+    }
+
+    // ── ORDER_TYPE → data_exchange → route ───────────────
     if (screen === "ORDER_TYPE") {
       const orderType = data.order_type || "delivery";
       console.log(`📋 ORDER_TYPE → ${orderType}`);
@@ -134,14 +146,11 @@ router.post("/endpoint", async (req, res) => {
         console.log("📋 Routing → DINE_BOOKING");
         return res.status(200).send(encryptResponse({ screen: "DINE_BOOKING", data: commonData }, aesKey, iv));
       }
-      // delivery
       console.log("📋 Routing → DELIVERY_ADDRESS");
       return res.status(200).send(encryptResponse({ screen: "DELIVERY_ADDRESS", data: commonData }, aesKey, iv));
     }
 
-    // ── COMPLETE ──────────────────────────────────────────
-    // Triggered when user taps "Confirm Order" on summary screens
-    // DELIVERY_SUMMARY, TAKEAWAY_SUMMARY, DINE_BOOKING all send action=complete
+    // ── COMPLETE ─────────────────────────────────────────
     if (action === "complete") {
       console.log("✅ Flow COMPLETE!");
       console.log("📦 Data:", JSON.stringify(data, null, 2));
@@ -162,18 +171,15 @@ router.post("/endpoint", async (req, res) => {
           : "Dine In";
 
       const addonList  = Array.isArray(selected_addons) ? selected_addons : [];
-      const addonItems = addonList.map((id) => ADDON_PRICES[id]).filter(Boolean);
+      const addonItems = addonList.map(id => ADDON_PRICES[id]).filter(Boolean);
       const addonTotal = addonItems.reduce((s, a) => s + a.price, 0);
       const isDelivery = order_type === "delivery";
       const deliveryCh = isDelivery ? (within_five_km === "yes" ? 100 : 150) : 0;
 
-      // ── Fetch session ─────────────────────────────────
       let session = await Session.findOne({ phoneNumber: phone });
       if (!session) {
-        console.error("❌ Session not found for phone:", phone);
-        return res.status(200).send(
-          encryptResponse({ screen: "SUCCESS", data: { status: "error" } }, aesKey, iv)
-        );
+        console.error("❌ Session not found:", phone);
+        return res.status(200).send(encryptResponse({ screen: "SUCCESS", data: { status: "error" } }, aesKey, iv));
       }
 
       const cartTotal  = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
@@ -190,17 +196,19 @@ router.post("/endpoint", async (req, res) => {
         : "Free";
 
       const addonText = addonItems.length > 0
-        ? addonItems.map((a) => `${a.name} (Rs.${a.price})`).join(", ")
+        ? addonItems.map(a => `${a.name} (Rs.${a.price})`).join(", ")
         : "";
 
       const tableInfo =
         order_type === "dine_in"
           ? `\n👥 *People:* ${table_persons}\n📅 *Date:* ${table_date}\n🕐 *Time:* ${table_time}\n🪑 *Seating:* ${table_seating === "ac" ? "❄️ AC" : "🌿 Non-AC"}`
           : order_type === "takeaway"
-          ? `\n🕐 *Pickup Time:* ${pickup_time}`
+          ? `\n🕐 *Pickup Time:* ${pickup_time || "ASAP"}`
           : "";
 
-      // ── Save to session ───────────────────────────────
+      // Build items list for bill
+      const itemsList = session.cart.map(i => `• ${i.name} × ${i.qty} = Rs.${i.price * i.qty}`).join("\n");
+
       session.deliveryData = {
         name:                 customer_name     || "Customer",
         phone:                customer_phone    || phone,
@@ -225,7 +233,6 @@ router.post("/endpoint", async (req, res) => {
       await session.save();
       console.log(`✅ Session saved | Grand Total: Rs.${grandTotal}`);
 
-      // ── Build bill text ───────────────────────────────
       const isDineIn = order_type === "dine_in";
       const billText =
         (isDineIn ? `✅ *Table Booking Confirmed!*\n\n` : `🧾 *Order Bill Summary*\n\n`) +
@@ -237,7 +244,9 @@ router.post("/endpoint", async (req, res) => {
         (addonText ? `🍱 *Add-ons:* ${addonText}\n` : "") +
         (special_instructions ? `📝 *Note:* ${special_instructions}\n` : "") +
         `─────────────────\n` +
-        `🛒 *Items:* Rs.${cartTotal}\n` +
+        `🛒 *Items:*\n${itemsList}\n` +
+        `─────────────────\n` +
+        `🛒 *Items Total:* Rs.${cartTotal}\n` +
         (addonTotal > 0 ? `🍱 *Add-ons:* Rs.${addonTotal}\n` : "") +
         `🚚 *Delivery:* ${deliveryLabel}\n` +
         `📊 *GST (${GST_PERCENT}%):* Rs.${gstAmount}\n` +
@@ -245,7 +254,6 @@ router.post("/endpoint", async (req, res) => {
         `💰 *Grand Total: Rs.${grandTotal}*\n\n` +
         `Select payment method:`;
 
-      // ── Send payment buttons ──────────────────────────
       if (order_type === "delivery") {
         await sendButtons(phone, billText, [
           { id: "PAY_COD",  title: "💵 Cash on Delivery" },
@@ -259,7 +267,6 @@ router.post("/endpoint", async (req, res) => {
           { id: "PAY_CARD", title: "💳 Card Payment"      },
         ]);
       } else {
-        // dine_in
         await sendButtons(phone, billText, [
           { id: "PAY_REST", title: "🍽️ Pay at Restaurant" },
           { id: "PAY_UPI",  title: "📲 UPI Payment"       },
@@ -267,17 +274,13 @@ router.post("/endpoint", async (req, res) => {
         ]);
       }
 
-      // ✅ Close the flow
       return res.status(200).send(
         encryptResponse({ screen: "SUCCESS", data: { status: "payment_pending" } }, aesKey, iv)
       );
     }
 
-    // ── Unhandled fallback ────────────────────────────────
-    console.log("⚠️ Unhandled action/screen:", { action, screen });
-    return res.status(200).send(
-      encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv)
-    );
+    console.log("⚠️ Unhandled:", { action, screen });
+    return res.status(200).send(encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv));
 
   } catch (err) {
     console.error("❌ Flow error:", err.message, err.stack);
