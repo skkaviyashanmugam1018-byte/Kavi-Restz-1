@@ -10,6 +10,7 @@ const sessionSchema = new mongoose.Schema(
     currentCategory: { type: String, default: null },
     pendingItem:     { type: mongoose.Schema.Types.Mixed, default: null },
     lastActivity:    { type: Date,   default: Date.now },
+    whatsappName:    { type: String, default: "" }, // ✅ WhatsApp profile name
   },
   { timestamps: true }
 );

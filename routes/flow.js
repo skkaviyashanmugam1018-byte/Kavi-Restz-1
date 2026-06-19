@@ -106,9 +106,26 @@ router.post("/endpoint", async (req, res) => {
           }
         } catch (e) { console.error("Session fetch error:", e.message); }
       }
+      // Pre-fill name from WhatsApp profile if available
+      let initValues = {};
+      let whatsappName = "";
+      if (phone) {
+        try {
+          const sess = await Session.findOne({ phoneNumber: phone });
+          if (sess?.whatsappName) {
+            whatsappName = sess.whatsappName;
+            initValues = { customer_name: whatsappName, customer_phone: phone.replace(/^91/, "") };
+          }
+        } catch (e) {}
+      }
       return res.status(200).send(encryptResponse({
         screen: "ORDER_TYPE",
-        data: { cart_summary: cartSummary, total_amount: totalAmount, error_messages: {}, init_values: {} },
+        data: {
+          cart_summary: cartSummary,
+          total_amount: totalAmount,
+          error_messages: {},
+          init_values: initValues,
+        },
       }, aesKey, iv));
     }
 
@@ -125,22 +142,21 @@ router.post("/endpoint", async (req, res) => {
         total_amount:    data.total_amount    || "",
       };
 
-      // Fetch live_location_address from session if user shared location
-      let liveLocationAddress = "";
-      if (phone && orderType === "delivery") {
-        try {
-          const session = await Session.findOne({ phoneNumber: phone });
-          liveLocationAddress = session?.deliveryData?.live_location || "";
-        } catch (e) {}
-      }
-
       if (orderType === "takeaway") {
         return res.status(200).send(encryptResponse({ screen: "TAKEAWAY_DETAILS", data: commonData }, aesKey, iv));
       }
       if (orderType === "dine_in") {
         return res.status(200).send(encryptResponse({ screen: "DINE_BOOKING", data: commonData }, aesKey, iv));
       }
-      // delivery
+
+      // delivery → check if user shared live location before flow
+      let liveLocationAddress = "";
+      if (phone) {
+        try {
+          const sess = await Session.findOne({ phoneNumber: phone });
+          liveLocationAddress = sess?.deliveryData?.live_location || "";
+        } catch (e) {}
+      }
       return res.status(200).send(encryptResponse({
         screen: "DELIVERY_ADDRESS",
         data: { ...commonData, live_location_address: liveLocationAddress },

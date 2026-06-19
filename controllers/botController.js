@@ -335,28 +335,19 @@ const ADDON_PRICES_MAP = {
 // ═══════════════════════════════════════════
 // SEND WELCOME — Logo + greeting ONCE
 // ═══════════════════════════════════════════
-async function sendWelcome(to) {
+async function sendWelcome(to, name = "") {
+  const greet = name ? `👋 Hello ${name}!` : "👋 Welcome!";
   // Step 1: Logo with welcome caption
   await sendImage(
     to,
     "https://kavirestaurant.in/wp-content/uploads/2026/05/logo-01-scaled.jpg",
-    "🍛 *Welcome to Kavi Chettinadu Restaurant!*\n_Taste The Tradition_ ✨\n\nWe are glad you are here! 🙏"
+    `🍛 *Welcome to Kavi Chettinadu Restaurant!*\n_Taste The Tradition_ ✨\n\n${greet} We are glad you are here! 🙏`
   );
-  // Step 2: Menu options list
-  await sendList(
+  // Step 2: Single "Explore Menus" button
+  await sendButtons(
     to,
-    "🍛 Kavi Chettinadu",
     "What would you like to do next?\n\nNext we will explore our menus 🍽️",
-    "Explore Menus",
-    [{
-      title: "Choose an option",
-      rows: [
-        { id: "VIEW_CATALOGUE", title: "🖼️ View Catalogue",  description: "Browse menu with images & prices" },
-        { id: "search",         title: "🔍 Search Menu",      description: "Search by dish name"             },
-        { id: "contact",        title: "📞 Contact Us",       description: "Restaurant info & timings"       },
-        { id: "exit",           title: "❌ Exit",              description: "End conversation"               },
-      ]
-    }]
+    [{ id: "EXPLORE_MENUS", title: "🍽️ Explore Menus" }]
   );
 }
 
@@ -461,9 +452,16 @@ async function placeOrder(from, session) {
   ];
 
   const newOrder = new Order({
-    orderId, phone: phone || from, name: name || "Customer",
-    address: address || orderTypeLabel, items: allItems,
-    totalAmount: finalTotal, paymentMethod: payLabel, status: "confirmed",
+    orderId,
+    phone:         phone || from,
+    name:          name  || "Customer",
+    address:       address || orderTypeLabel,
+    items:         allItems,
+    totalAmount:   finalTotal,
+    paymentMethod: payLabel,
+    status:        "confirmed",
+    orderType:     order_type || "delivery",
+    notes:         session.deliveryData?.special_instructions || "",
   });
   await newOrder.save();
   console.log(`✅ Order: ${orderId} | Total: Rs.${finalTotal}`);
@@ -571,7 +569,7 @@ async function generateRazorpayLink(session, from, type = "upi") {
 // ═══════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════
-const handleMessage = async (from, messageBody, interactiveReply, locationData, catalogueOrder) => {
+const handleMessage = async (from, messageBody, interactiveReply, locationData, catalogueOrder, contactName = "") => {
   try {
     let session = await Session.findOne({ phoneNumber: from });
     if (!session) {
@@ -581,6 +579,13 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
     if (!session.cart) session.cart = [];
     if (!session.deliveryData) session.deliveryData = {};
     session.lastActivity = new Date();
+
+    // ✅ Save WhatsApp profile name if available
+    if (contactName && !session.whatsappName) {
+      session.whatsappName = contactName;
+      session.markModified("whatsappName");
+      await session.save();
+    }
 
     const input    = interactiveReply?.id || messageBody?.trim()?.toLowerCase();
     const rawInput = messageBody?.trim();
@@ -623,7 +628,31 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       session.state = "MAIN_MENU"; session.cart = []; session.deliveryData = {};
       session.markModified("cart"); session.markModified("deliveryData");
       await session.save();
-      await sendWelcome(from);
+      const greetName = session.whatsappName || contactName || "";
+      await sendWelcome(from, greetName);
+      return;
+    }
+
+
+    // ── EXPLORE MENUS → show main options list ────────────
+    if (input === "EXPLORE_MENUS") {
+      session.state = "MAIN_MENU";
+      await session.save();
+      await sendList(
+        from,
+        "🍛 Kavi Chettinadu",
+        "Choose an option to get started:",
+        "Select",
+        [{
+          title: "What would you like to do?",
+          rows: [
+            { id: "VIEW_CATALOGUE", title: "🖼️ View Catalogue",  description: "Browse menu with images & prices" },
+            { id: "search",         title: "🔍 Search Menu",      description: "Search by dish name"             },
+            { id: "contact",        title: "📞 Contact Us",       description: "Restaurant info & timings"       },
+            { id: "exit",           title: "❌ Exit",              description: "End conversation"               },
+          ]
+        }]
+      );
       return;
     }
 
@@ -793,7 +822,8 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── PLACE ORDER → Location or Address choice ──────────
+    // ── PLACE ORDER → directly open flow ────────────────────
+    // Location is asked inside flow only when delivery is selected
     if (["PLACE_ORDER", "PLACE_ORDER_FLOW", "/order"].includes(input)) {
       if (!session.cart || session.cart.length === 0) {
         await sendButtons(from, "❌ Your cart is empty!", [
@@ -802,22 +832,13 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         ]);
         return;
       }
-      session.state = "AWAITING_LOCATION";
+      session.state = "AWAITING_FLOW";
       session.deliveryData = {};
       session.markModified("deliveryData");
       await session.save();
-      await sendList(from,
-        "📍 Share Location Details",
-        "Choose one option so we can find your delivery address:",
-        "Choose Option",
-        [{
-          title: "Address Options",
-          rows: [
-            { id: "SHARE_LOCATION", title: "📍 Live Location",    description: "Share your current location from WhatsApp" },
-            { id: "TYPE_ADDRESS",   title: "✏️ Type My Address",   description: "Enter address manually in the form"        },
-          ]
-        }]
-      );
+      const cartSummary = buildCartSummary(session.cart);
+      const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+      await sendDeliveryFlow(from, cartSummary, total);
       return;
     }
 
@@ -959,45 +980,8 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
-    // ── AWAITING UPI ID — checked BEFORE payment block ────
-    if (session.state === "AWAITING_UPI_ID" && rawInput && !rawInput.startsWith("/") && input !== "__FLOW_COMPLETE__") {
-      const upiId = rawInput.trim();
-      const total = session.deliveryData?.grand_total || 0;
 
-      if (!total || total <= 0 || !session.deliveryData?.name) {
-        console.log("⚠️ UPI blocked — no active order");
-        await sendButtons(from, "❌ *No active order found.*\n\nPlease start a new order.", [
-          { id: "hi", title: "🍴 Start Ordering" },
-        ]);
-        return;
-      }
-
-      console.log(`💳 UPI ID: ${upiId} | Amount: Rs.${total}`);
-      session.deliveryData.paymentMethod = "PAY_UPI";
-      session.deliveryData.upi_id = upiId;
-      session.state = "PAYMENT_SELECT";
-      session.markModified("deliveryData");
-      await session.save();
-
-      const link = await generateRazorpayLink(session, from, "upi");
-      if (link) {
-        await sendText(from,
-          `✅ *UPI ID noted:* ${upiId}\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay:* ${link}\n\nPay via PhonePe / GPay / Paytm\n⏰ Link valid for 30 minutes.`
-        );
-      } else {
-        const restUpi = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
-        await sendText(from,
-          `✅ *UPI ID noted:* ${upiId}\n\n📲 *Pay directly to:*\n*${restUpi}*\n\n💰 Amount: *Rs.${total}*\n\nAfter payment confirm below.`
-        );
-      }
-      await sendButtons(from, "✅ Have you completed the payment?", [
-        { id: "UPI_DONE", title: "✅ Payment Done"    },
-        { id: "PAY_COD",  title: "💵 Pay COD instead" },
-      ]);
-      return;
-    }
-
-    // ── PAYMENT BUTTONS ───────────────────────────────────
+        // ── PAYMENT BUTTONS ───────────────────────────────────
     if (["PAY_COD", "PAY_UPI", "PAY_CARD", "PAY_REST"].includes(input)) {
       // Guard: must have valid order
       if (!session.deliveryData?.grand_total) {
@@ -1014,11 +998,30 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
 
       if (input === "PAY_UPI") {
         const total = session.deliveryData.grand_total;
-        session.state = "AWAITING_UPI_ID";
         await session.save();
+        // Generate Razorpay link directly for UPI (no need to type UPI ID)
+      const upiLink = await generateRazorpayLink(session, from, "upi");
+      if (upiLink) {
         await sendText(from,
-          `📲 *UPI Payment*\n\n💰 Amount: *Rs.${total}*\n\nPlease type your *UPI ID* below:\n(e.g. name@gpay, name@paytm, 9876543210@ybl)`
+          `📲 *UPI / Online Payment*\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay:*\n${upiLink}\n\nPay via PhonePe / GPay / Paytm / UPI\n⏰ Link valid for 30 minutes.`
         );
+        await sendButtons(from, "✅ Completed the payment?", [
+          { id: "UPI_DONE", title: "✅ Payment Done"    },
+          { id: "PAY_COD",  title: "💵 Pay COD instead" },
+        ]);
+        return;
+      } else {
+        // Fallback — restaurant UPI
+        const restUpi = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
+        await sendText(from,
+          `📲 *UPI Payment*\n\nPay to: *${restUpi}*\n💰 Amount: *Rs.${total}*`
+        );
+        await sendButtons(from, "✅ Completed the payment?", [
+          { id: "UPI_DONE", title: "✅ Payment Done"    },
+          { id: "PAY_COD",  title: "💵 Pay COD instead" },
+        ]);
+        return;
+      }
         return;
       }
 
