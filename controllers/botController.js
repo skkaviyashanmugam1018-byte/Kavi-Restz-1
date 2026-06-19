@@ -802,6 +802,38 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
+
+    // ── AWAITING LOCATION (after PLACE_ORDER, user shares live location) ─────
+    if (locationData && session.state === "AWAITING_LOCATION") {
+      const mapsUrl = `https://maps.google.com/?q=${locationData.lat},${locationData.lng}`;
+      const address = locationData.address || mapsUrl;
+      session.deliveryData = session.deliveryData || {};
+      session.deliveryData.live_location = address;
+      session.deliveryData.address = address;
+      session.state = "AWAITING_FLOW";
+      session.markModified("deliveryData");
+      await session.save();
+      // Now send the flow
+      const cartSummary = buildCartSummary(session.cart);
+      const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+      await sendText(from, `✅ *Location received!*
+📍 ${address}
+
+Now please fill your order details:`);
+      await sendDeliveryFlow(from, cartSummary, total);
+      return;
+    }
+
+    // ── LOCATION shared any other time ────────────────────────────────────────
+    if (locationData) {
+      const mapsUrl = `https://maps.google.com/?q=${locationData.lat},${locationData.lng}`;
+      await sendText(from, `📍 *Location received!*
+${mapsUrl}
+
+Send *hi* to start ordering.`);
+      return;
+    }
+
     if (["PLACE_ORDER", "PLACE_ORDER_FLOW", "/order"].includes(input)) {
       if (!session.cart || session.cart.length === 0) {
         await sendButtons(from, "❌ Your cart is empty!", [
@@ -810,10 +842,42 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         ]);
         return;
       }
+      // ✅ Ask delivery type first — location or direct flow
+      session.state = "AWAITING_LOCATION";
+      session.deliveryData = {};
+      session.markModified("deliveryData");
+      await session.save();
+      await sendList(from,
+        "📍 Delivery Address",
+        "How would you like to share your delivery address?",
+        "Choose Option",
+        [{
+          title: "Address Options",
+          rows: [
+            { id: "SHARE_LOCATION", title: "📍 Share Live Location", description: "Tap to share your current location" },
+            { id: "TYPE_ADDRESS",   title: "✏️ Type My Address",     description: "Enter address manually in form"    },
+          ]
+        }]
+      );
+      return;
+    }
+
+    // ── SHARE LOCATION → prompt WhatsApp location pin ─────────────────────────
+    if (input === "SHARE_LOCATION") {
+      session.state = "AWAITING_LOCATION";
+      await session.save();
+      await sendText(from, "📍 *Share your location:*\n\nTap the 📎 attachment icon → *Location* → *Send your current location*\n\nWe will use it as your delivery address!");
+      return;
+    }
+
+    // ── TYPE ADDRESS → open flow directly ─────────────────────────────────────
+    if (input === "TYPE_ADDRESS") {
       session.state = "AWAITING_FLOW";
+      session.deliveryData = { live_location: "" };
+      session.markModified("deliveryData");
       await session.save();
       const cartSummary = buildCartSummary(session.cart);
-      const total       = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+      const total = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
       await sendDeliveryFlow(from, cartSummary, total);
       return;
     }
@@ -835,9 +899,13 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         selected_addons, special_instructions, pickup_time,
       } = flowData;
 
+      // ✅ Use live location if shared before flow, else use typed address
+      const liveLocation = session.deliveryData?.live_location || "";
       const full_address =
         order_type === "delivery"
-          ? [delivery_address, pincode ? `- ${pincode}` : null].filter(Boolean).join(" ")
+          ? liveLocation
+            ? `${delivery_address ? delivery_address + ", " : ""}📍 Live Location: ${liveLocation}${pincode ? " - " + pincode : ""}`
+            : [delivery_address, pincode ? `- ${pincode}` : null].filter(Boolean).join(" ")
           : order_type === "takeaway"
           ? `Take Away | Pickup: ${pickup_time || "ASAP"}`
           : "Dine In";
@@ -949,35 +1017,29 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       session.markModified("deliveryData");
       await session.save();
 
-      // ✅ FIX — Check Razorpay keys before creating instance
-      if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-        console.error("❌ Razorpay keys missing in env!");
+      // ✅ UPI — Generate Razorpay payment link
+      try {
+        const Razorpay = require("razorpay");
+        const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+        const payLink = await rzp.paymentLink.create({
+          amount: total * 100, currency: "INR",
+          description: `Kavi Chettinadu - ${session.deliveryData?.name || "Customer"}`,
+          customer: { name: session.deliveryData?.name || "Customer", contact: normalizePhone(session.deliveryData?.phone || from) },
+          notify: { sms: false, email: false },
+          expire_by: Math.floor(Date.now() / 1000) + 300,
+          reminder_enable: false,
+        });
+        console.log("✅ Razorpay UPI link:", payLink.short_url);
+        await sendText(from,
+          `✅ *UPI ID noted:* ${upiId}\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay:* ${payLink.short_url}\n\nPay via PhonePe / GPay / Paytm\n⏰ Link valid for 5 minutes.`
+        );
+      } catch (rzpErr) {
+        console.error("❌ Razorpay UPI error:", JSON.stringify(rzpErr));
+        // Fallback — direct UPI ID
         const restUpiId = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
         await sendText(from,
-          `📲 *UPI Payment*\n\nPay to: *${restUpiId}*\n💰 Amount: *Rs.${total}*\n\nAfter payment, confirm below.`
+          `✅ *UPI ID noted:* ${upiId}\n\n📲 *Pay directly to restaurant UPI:*\n*${restUpiId}*\n\n💰 Amount: *Rs.${total}*\n\nAfter payment, confirm below.`
         );
-      } else {
-        try {
-          const Razorpay = require("razorpay");
-          const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
-          const payLink = await rzp.paymentLink.create({
-            amount: total * 100, currency: "INR",
-            description: `Kavi Chettinadu - ${session.deliveryData?.name || "Customer"}`,
-            customer: { name: session.deliveryData?.name || "Customer", contact: normalizePhone(session.deliveryData?.phone || from) },
-            notify: { sms: false, email: false },
-            expire_by: Math.floor(Date.now() / 1000) + 300,
-            reminder_enable: false,
-          });
-          await sendText(from,
-            `✅ *UPI ID received:* ${upiId}\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay:* ${payLink.short_url}\n\n⏰ Link valid for 5 minutes.`
-          );
-        } catch (rzpErr) {
-          console.error("❌ Razorpay UPI error:", rzpErr.message);
-          const restUpiId = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
-          await sendText(from,
-            `📲 *UPI Payment*\n\nPay to: *${restUpiId}*\n💰 Amount: *Rs.${total}*\n\nAfter payment, confirm below.`
-          );
-        }
       }
       await sendButtons(from, "✅ Have you completed the payment?", [
         { id: "UPI_DONE", title: "✅ Payment Done"    },
@@ -1005,11 +1067,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
 
       if (input === "PAY_CARD") {
         const total = session.deliveryData?.grand_total || 0;
-        if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-          await sendText(from, "💳 *Card payment will be collected at delivery/counter.*");
-          await placeOrder(from, session);
-          return;
-        }
         try {
           const Razorpay = require("razorpay");
           const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
@@ -1021,15 +1078,16 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
             expire_by: Math.floor(Date.now() / 1000) + 600,
             reminder_enable: false,
           });
+          console.log("✅ Razorpay Card link:", payLink.short_url);
           await sendText(from,
-            `💳 *Card Payment*\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay:* ${payLink.short_url}\n\n⏰ Link valid for 10 minutes.`
+            `💳 *Card / UPI Payment*\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay:* ${payLink.short_url}\n\n⏰ Link valid for 10 minutes.`
           );
           await sendButtons(from, "✅ Have you completed the payment?", [
             { id: "UPI_DONE", title: "✅ Payment Done"    },
             { id: "PAY_COD",  title: "💵 Pay COD instead" },
           ]);
         } catch (rzpErr) {
-          console.error("❌ Razorpay card error:", rzpErr.message);
+          console.error("❌ Razorpay card error:", JSON.stringify(rzpErr));
           await sendText(from, "💳 *Card payment will be collected at delivery/counter.*");
           await placeOrder(from, session);
         }
