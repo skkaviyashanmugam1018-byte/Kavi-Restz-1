@@ -258,6 +258,36 @@ router.post("/endpoint", async (req,res) => {
       return res.status(200).send(encryptResponse({screen:"SUCCESS",data:{status:"payment_pending"}},aesKey,iv));
     }
 
+    // ── ORDER_TYPE data_exchange (fallback if INIT shows ORDER_TYPE) ──
+    if (screen==="ORDER_TYPE"&&action==="data_exchange") {
+      const orderType=data.order_type||"dine_in";
+      console.log(`📋 ORDER_TYPE fallback → ${orderType}`);
+      let cartSummary="Table Booking",totalAmount="Rs.0";
+      try {
+        const sess=await Session.findOne({phoneNumber:phone});
+        if (sess?.cart?.length>0) {
+          cartSummary=sess.cart.map(i=>`${i.name} x${i.qty}`).join(", ");
+          totalAmount=`Rs.${sess.cart.reduce((s,i)=>s+i.price*i.qty,0)}`;
+        }
+      } catch(e) {}
+      if (orderType==="takeaway") {
+        return res.status(200).send(encryptResponse({
+          screen:"TAKEAWAY_DETAILS",
+          data:{order_type:"takeaway",cart_summary:cartSummary,total_amount:totalAmount,init_values:{},error_messages:{}}
+        },aesKey,iv));
+      }
+      if (orderType==="delivery") {
+        return res.status(200).send(encryptResponse({
+          screen:"DELIVERY_DETAILS",
+          data:{order_type:"delivery",cart_summary:cartSummary,total_amount:totalAmount,init_values:{},error_messages:{}}
+        },aesKey,iv));
+      }
+      return res.status(200).send(encryptResponse({
+        screen:"DINE_DETAILS",
+        data:{order_type:"dine_in",cart_summary:cartSummary,total_amount:totalAmount,init_values:{},error_messages:{}}
+      },aesKey,iv));
+    }
+
     console.log("⚠️ Unhandled:",{action,screen});
     return res.status(200).send(encryptResponse({version:"3.0",data:{status:"active"}},aesKey,iv));
 
