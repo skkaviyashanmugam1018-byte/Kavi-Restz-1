@@ -1,3 +1,4 @@
+
 const express = require("express");
 const router  = express.Router();
 const crypto  = require("crypto");
@@ -6,7 +7,7 @@ const path    = require("path");
 const Session = require("../models/Session");
 const { sendButtons, sendText } = require("../config/whatsapp");
 const { getChargeFromPincode, getChargeFromLocation } = require("../config/distanceHelper");
-
+ 
 let privateKey;
 if (process.env.PRIVATE_KEY) {
   privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n").replace(/\\r/g, "");
@@ -15,7 +16,7 @@ if (process.env.PRIVATE_KEY) {
   privateKey = fs.readFileSync(path.join(__dirname, "../private.pem"), "utf8");
   console.log("🔑 Using private.pem, length:", privateKey.length);
 }
-
+ 
 function decryptRequest(body) {
   const { encrypted_aes_key, encrypted_flow_data, initial_vector } = body;
   const decryptedAesKey = crypto.privateDecrypt(
@@ -32,7 +33,7 @@ function decryptRequest(body) {
   const decrypted = decipher.update(encryptedBody, undefined, "utf8") + decipher.final("utf8");
   return { decryptedBody: JSON.parse(decrypted), aesKey: decryptedAesKey, iv };
 }
-
+ 
 function encryptResponse(response, aesKey, iv) {
   const flippedIv = Buffer.alloc(iv.length);
   for (let i = 0; i < iv.length; i++) flippedIv[i] = ~iv[i];
@@ -44,7 +45,7 @@ function encryptResponse(response, aesKey, iv) {
   ]);
   return encrypted.toString("base64");
 }
-
+ 
 const GST_PERCENT = 5;
 const ADDON_PRICES = {
   raita:       { name: "Raita",         price: 30 },
@@ -55,14 +56,14 @@ const ADDON_PRICES = {
   curd_rice:   { name: "Curd Rice",     price: 60 },
   sweet:       { name: "Sweet (Kheer)", price: 50 },
 };
-
+ 
 const SEATING_LABELS = {
   ac:          "❄️ AC Hall",
   non_ac:      "🌿 Non-AC",
   family_hall: "👨‍👩‍👧 Family Hall",
   outdoor:     "🌳 Outdoor",
 };
-
+ 
 const CELEBRATION_LABELS = {
   birthday:    "🎂 Birthday Decoration",
   anniversary: "💑 Anniversary Setup",
@@ -72,22 +73,22 @@ const CELEBRATION_LABELS = {
   board:       "🪧 Welcome Name Board",
   photo:       "📸 Photography",
 };
-
+ 
 router.post("/endpoint", async (req, res) => {
   try {
     const body = req.body;
     console.log("📩 Flow endpoint | action:", body?.action || "encrypted");
-
+ 
     // ✅ Unencrypted ping
     if (body?.action === "ping") {
       console.log("🏓 Ping → pong");
       return res.status(200).json({ version: "3.0", data: { status: "active" } });
     }
-
+ 
     if (!body?.encrypted_aes_key || !body?.encrypted_flow_data || !body?.initial_vector) {
       return res.status(200).json({ version: "3.0", data: { status: "active" } });
     }
-
+ 
     let decryptedBody, aesKey, iv;
     try {
       ({ decryptedBody, aesKey, iv } = decryptRequest(body));
@@ -95,25 +96,25 @@ router.post("/endpoint", async (req, res) => {
       console.error("❌ Decrypt error:", err.message);
       return res.status(421).json({ error: "Decryption failed" });
     }
-
+ 
     const { flow_token, data, action, screen } = decryptedBody;
     console.log("📩 Flow:", JSON.stringify({ action, screen }, null, 2));
-
+ 
     // ✅ Encrypted ping
     if (action === "ping") {
       return res.status(200).send(encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv));
     }
-
+ 
     // Extract phone from token: "delivery_<phone>_<timestamp>"
     const tokenParts = (flow_token || "").split("_");
     const phone = tokenParts.length >= 2 ? tokenParts[1] : null;
     console.log(`📞 Phone: ${phone}`);
-
+ 
     // ✅ INIT — fetch cart + session data
     if (action === "INIT" || (action === "navigate" && (!screen || screen === ""))) {
       console.log("📋 INIT → ORDER_TYPE");
       let cartSummary = "", totalAmount = "Rs.0", initValues = {}, preSelectedType = "";
-
+ 
       if (phone) {
         try {
           const sess = await Session.findOne({ phoneNumber: phone });
@@ -136,7 +137,7 @@ router.post("/endpoint", async (req, res) => {
           }
         } catch (e) { console.error("Session fetch error:", e.message); }
       }
-
+ 
       console.log(`📋 INIT | preSelected: ${preSelectedType} | cart: ${cartSummary}`);
       return res.status(200).send(encryptResponse({
         screen: "ORDER_TYPE",
@@ -148,25 +149,25 @@ router.post("/endpoint", async (req, res) => {
         },
       }, aesKey, iv));
     }
-
+ 
     // ── ORDER_TYPE → route to correct flow ───────────────
     if (screen === "ORDER_TYPE") {
       const orderType = data.order_type || "delivery";
       console.log(`📋 ORDER_TYPE → ${orderType}`);
-
+ 
       // Fetch live location if shared
       let liveLocationAddress = "";
       try {
         const sess = await Session.findOne({ phoneNumber: phone });
         liveLocationAddress = sess?.deliveryData?.live_location || "";
       } catch(e) {}
-
+ 
       const baseData = {
         order_type:    orderType,
         cart_summary:  data.cart_summary || "",
         total_amount:  data.total_amount || "",
       };
-
+ 
       if (orderType === "takeaway") {
         return res.status(200).send(encryptResponse({ screen: "TAKEAWAY_DETAILS", data: baseData }, aesKey, iv));
       }
@@ -179,12 +180,12 @@ router.post("/endpoint", async (req, res) => {
         data: { ...baseData, live_location_address: liveLocationAddress, customer_name_prefill: "", customer_phone_prefill: phone?.replace(/^91/,"") || "" },
       }, aesKey, iv));
     }
-
+ 
     // ── COMPLETE ──────────────────────────────────────────
     if (action === "complete") {
       console.log("✅ Flow COMPLETE!");
       console.log("📦 Data:", JSON.stringify(data, null, 2));
-
+ 
       const {
         order_type,
         customer_name, customer_phone, alternate_phone,
@@ -194,14 +195,14 @@ router.post("/endpoint", async (req, res) => {
         celebration_addons, occasion_name,
         pickup_date, pickup_time,
       } = data;
-
+ 
       // ── Calculate delivery charge ─────────────────────
       let deliveryCharge = 0, distanceInfo = "";
       if (order_type === "delivery") {
         let sess = null;
         try { sess = await Session.findOne({ phoneNumber: phone }); } catch(e) {}
         const liveCoords = sess?.deliveryData?.live_location_coords;
-
+ 
         let distResult;
         if (liveCoords) {
           distResult = getChargeFromLocation(liveCoords.lat, liveCoords.lng);
@@ -216,7 +217,7 @@ router.post("/endpoint", async (req, res) => {
         deliveryCharge = distResult.charge;
         console.log(`🚚 Delivery: ${distanceInfo} → Rs.${deliveryCharge}`);
       }
-
+ 
       // ── Build address ─────────────────────────────────
       const liveAddr = live_location_address || "";
       const full_address =
@@ -227,14 +228,14 @@ router.post("/endpoint", async (req, res) => {
           : order_type === "takeaway"
           ? `Take Away | Pickup: ${pickup_date || ""} ${pickup_time || "ASAP"}`
           : "Dine In";
-
+ 
       // ── Calculate totals ──────────────────────────────
       let session = await Session.findOne({ phoneNumber: phone });
       if (!session) {
         console.error("❌ Session not found:", phone);
         return res.status(200).send(encryptResponse({ screen: "SUCCESS", data: { status: "error" } }, aesKey, iv));
       }
-
+ 
       const cartTotal  = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
       const addonList  = Array.isArray(selected_addons) ? selected_addons : [];
       const addonItems = addonList.map(id => ADDON_PRICES[id]).filter(Boolean);
@@ -242,18 +243,18 @@ router.post("/endpoint", async (req, res) => {
       const subtotal   = cartTotal + addonTotal + deliveryCharge;
       const gstAmount  = Math.round(subtotal * GST_PERCENT / 100);
       const grandTotal = subtotal + gstAmount;
-
+ 
       const orderTypeLabel =
         order_type === "delivery" ? "🚚 Home Delivery" :
         order_type === "takeaway" ? "🥡 Take Away"     : "🍽️ Dine In";
-
+ 
       const addonText = addonItems.map(a => `${a.name} (Rs.${a.price})`).join(", ");
-
+ 
       const celebList = (Array.isArray(celebration_addons) ? celebration_addons : [])
         .map(id => CELEBRATION_LABELS[id] || id).join(", ");
-
+ 
       const seatingLabel = SEATING_LABELS[table_seating] || table_seating || "";
-
+ 
       const tableInfo =
         order_type === "dine_in"
           ? `\n👥 *Guests:* ${table_persons}\n📅 *Date:* ${table_date}\n🕐 *Slot:* ${table_time}\n🪑 *Seating:* ${seatingLabel}` +
@@ -262,13 +263,13 @@ router.post("/endpoint", async (req, res) => {
           : order_type === "takeaway"
           ? `\n📅 *Date:* ${pickup_date || ""}\n🕐 *Pickup:* ${pickup_time || "ASAP"}`
           : "";
-
+ 
       const deliveryLabel = order_type === "delivery"
         ? `Rs.${deliveryCharge} (${distanceInfo})`
         : "Free";
-
+ 
       const itemsList = session.cart.map(i => `• ${i.name} × ${i.qty} = Rs.${i.price * i.qty}`).join("\n");
-
+ 
       // ── Save to session ───────────────────────────────
       session.deliveryData = {
         name:                 customer_name     || "Customer",
@@ -299,7 +300,7 @@ router.post("/endpoint", async (req, res) => {
       session.markModified("deliveryData");
       await session.save();
       console.log(`✅ Session saved | Grand Total: Rs.${grandTotal}`);
-
+ 
       // ── Bill text ─────────────────────────────────────
       const isDineIn = order_type === "dine_in";
       const billText =
@@ -320,7 +321,7 @@ router.post("/endpoint", async (req, res) => {
         `─────────────────\n` +
         `💰 *Grand Total: Rs.${grandTotal}*\n\n` +
         `Select payment method:`;
-
+ 
       // ── Payment buttons ───────────────────────────────
       const payButtons =
         order_type === "dine_in" ? [
@@ -336,20 +337,21 @@ router.post("/endpoint", async (req, res) => {
           { id: "PAY_UPI",  title: "📲 UPI Payment"       },
           { id: "PAY_CARD", title: "💳 Card Payment"       },
         ];
-
+ 
       await sendButtons(phone, billText, payButtons);
       return res.status(200).send(
         encryptResponse({ screen: "SUCCESS", data: { status: "payment_pending" } }, aesKey, iv)
       );
     }
-
+ 
     console.log("⚠️ Unhandled:", { action, screen });
     return res.status(200).send(encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv));
-
+ 
   } catch (err) {
     console.error("❌ Flow error:", err.message, err.stack);
     return res.status(200).json({ version: "3.0", error: "Server Error" });
   }
 });
-
+ 
 module.exports = router;
+ 
