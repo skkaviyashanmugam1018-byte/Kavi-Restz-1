@@ -824,17 +824,17 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       session.deliveryData.paymentMethod=input;session.markModified("deliveryData");await session.save();
 
       if (input==="PAY_UPI") {
-        const total=session.deliveryData.grand_total;
-        const link=await generateRazorpayLink(session,from,"upi");
+        const total = session.deliveryData.grand_total;
+        const link  = await generateRazorpayLink(session, from, "upi");
         if (link) {
           await sendButtons(from,
-            `📲 *UPI / Online Payment*\n\n💰 Amount: *Rs.${total}*\n\n🔗 Click to Pay:\n${link}\n\nPay via PhonePe / GPay / Paytm / UPI`,
+            `📲 *UPI / Online Payment*\n\n💰 Amount: *Rs.${total}*\n\n🔗 *Click to Pay Now:*\n${link}\n\nPay via PhonePe / GPay / Paytm\n\n👇 Tap below after payment:`,
             [{id:"UPI_DONE",title:"✅ Payment Done"},{id:"PAY_COD",title:"💵 Pay COD instead"}]
           );
         } else {
-          const restUpi=process.env.RESTAURANT_UPI_ID||"kaviyakiruthi22@okhdfcbank";
+          const restUpi = process.env.RESTAURANT_UPI_ID || "kaviyakiruthi22@okhdfcbank";
           await sendButtons(from,
-            `📲 *UPI Payment*\n\nPay to: *${restUpi}*\n💰 Amount: *Rs.${total}*\n\nAfter payment tap below:`,
+            `📲 *UPI Payment*\n\nPay to: *${restUpi}*\n💰 Amount: *Rs.${total}*\n\n👇 Tap below after payment:`,
             [{id:"UPI_DONE",title:"✅ Payment Done"},{id:"PAY_COD",title:"💵 Pay COD instead"}]
           );
         }
@@ -859,11 +859,14 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       await placeOrder(from,session);return;
     }
 
-    // ── UPI DONE ──────────────────────────────────────────
+    // ── UPI DONE → confirm order immediately ─────────────
     if (input==="UPI_DONE") {
-      session.deliveryData.paymentMethod=session.deliveryData.paymentMethod||"PAY_UPI";
-      session.markModified("deliveryData");await session.save();
-      await placeOrder(from,session);return;
+      session.deliveryData.paymentMethod = session.deliveryData.paymentMethod || "PAY_UPI";
+      session.markModified("deliveryData");
+      await session.save();
+      await sendText(from, "✅ *Payment received!*\n\nConfirming your order...");
+      await placeOrder(from, session);
+      return;
     }
 
     // ── FALLBACK ──────────────────────────────────────────
