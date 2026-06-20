@@ -683,6 +683,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
         await sendButtons(from,"❌ Your cart is empty!",[{id:"VIEW_CATALOGUE",title:"🖼️ View Catalogue"},{id:"BROWSE_MENU",title:"📋 Browse Menu"}]);
         return;
       }
+      console.log(`🎯 PLACE_ORDER | preSelectedType: ${session.preSelectedOrderType}`);
       session.state="AWAITING_FLOW";await session.save();
       const cartSummary=buildCartSummary(session.cart);
       const total=session.cart.reduce((s,i)=>s+i.price*i.qty,0);
