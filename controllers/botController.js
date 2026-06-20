@@ -877,6 +877,26 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       return;
     }
 
+    // ── SKIP LOCATION AFTER FLOW ─────────────────────────
+    if (input === "SKIP_LOCATION_AFTER_FLOW") {
+      session.state = "PAYMENT_SELECT";
+      await session.save();
+      const d = session.deliveryData;
+      if (!d?.grand_total) {
+        await sendText(from, "❌ Order details missing. Send *hi* to start again.");
+        return;
+      }
+      await sendButtons(from,
+        `🧾 *Bill Summary*\n\n👤 ${d.name} | 📞 ${d.phone}\n📍 ${d.address}\n─────────────\n💰 *Total: Rs.${d.grand_total}*\n\n💳 Choose payment:`,
+        [
+          {id:"PAY_COD", title:"💵 Cash on Delivery"},
+          {id:"PAY_UPI", title:"📲 UPI Payment"},
+          {id:"PAY_CARD",title:"💳 Card Payment"},
+        ]
+      );
+      return;
+    }
+
     // ── FALLBACK ──────────────────────────────────────────
     await sendButtons(from,
       "🤔 Didn't get that. Send *hi* to start! 🍛",
