@@ -534,17 +534,19 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
 
     // ── 📍 SHARE LOCATION ────────────────────────────────
     if (input==="SHARE_LOCATION") {
-      session.state="AWAITING_LOCATION";
+      session.state = "AWAITING_LOCATION";
+      session.preSelectedOrderType = "delivery";
+      session.markModified("preSelectedOrderType");
       await session.save();
       await sendText(from,
-        "📍 *Share your live location:*\n\n"+
-        "Tap the 📎 *attachment icon* → *Location* → *Send your current location*\n\n"+
+        "📍 *Share your live location:*\n\n" +
+        "Tap the 📎 *attachment icon* below\n" +
+        "→ *Location*\n" +
+        "→ *Send your current location*\n\n" +
         "We will calculate delivery charge automatically! 🚚"
       );
-      await sendButtons(from,"Or tap below to type address instead:",[
-        {id:"SKIP_LOCATION",title:"✏️ Type Address Instead"},
-      ]);
       return;
+      // Flow will open AFTER location is received (in locationData handler)
     }
 
     // ── ✏️ SKIP LOCATION → manual address in form ────────
