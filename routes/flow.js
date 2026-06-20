@@ -173,6 +173,8 @@ router.post("/endpoint", async (req, res) => {
               address_type:          "live_location",
               cart_summary:          cartSummary,
               total_amount:          totalAmount,
+              init_values:           initValues,
+              error_messages:        {},
             }
           }, aesKey, iv));
         }
@@ -251,10 +253,11 @@ router.post("/endpoint", async (req, res) => {
         pickup_date, pickup_time,
       } = data;
 
-      // Auto-fill name/phone from WhatsApp session
+      // Name/phone from flow data (pre-filled from session via init-values)
+      // Fallback to session if flow data empty
       const sess2 = await getSessionData(phone);
-      const customer_name  = sess2?.whatsappName || "Customer";
-      const customer_phone = phone?.replace(/^91/, "") || "";
+      const customer_name  = data.customer_name  || sess2?.whatsappName || "Customer";
+      const customer_phone = data.customer_phone || phone?.replace(/^91/, "") || "";
       const alternate_phone = alt_phone_from_flow || "";
 
       // ── Delivery charge ──────────────────────────────────
