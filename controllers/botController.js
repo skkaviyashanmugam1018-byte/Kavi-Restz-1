@@ -1,4 +1,3 @@
-
 const Session = require("../models/Session");
 const Order = require("../models/Order");
 const {
@@ -818,7 +817,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
 
     // ── PAYMENT ───────────────────────────────────────────
     if (["PAY_COD","PAY_UPI","PAY_CARD","PAY_REST"].includes(input)) {
-      if (!session.deliveryData || session.deliveryData.grand_total===undefined || session.deliveryData.grand_total===null) {
+      if (!session.deliveryData?.grand_total) {
         await sendButtons(from,"❌ *No active order.*\n\nSend *hi* to start.",[{id:"hi",title:"🍴 Start Ordering"}]);
         return;
       }
