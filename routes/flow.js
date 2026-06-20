@@ -156,7 +156,14 @@ router.post("/endpoint", async (req, res) => {
       if (preSelectedType === "delivery") {
         return res.status(200).send(encryptResponse({
           screen: "DELIVERY_DETAILS",
-          data: { order_type: "delivery", cart_summary: cartSummary, total_amount: totalAmount, init_values: initValues, error_messages: {} }
+          data: {
+            order_type: "delivery",
+            cart_summary: cartSummary,
+            total_amount: totalAmount,
+            live_location_address: liveLocation || "",
+            init_values: initValues,
+            error_messages: {}
+          }
         }, aesKey, iv));
       }
       // Default: dine_in
