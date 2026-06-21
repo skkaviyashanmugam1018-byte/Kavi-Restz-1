@@ -159,22 +159,21 @@ router.post("/endpoint", async (req, res) => {
         }, aesKey, iv));
       }
       if (preSelectedType === "delivery") {
-        // Also check live_location_coords as backup
-        let hasLiveLocation = liveLocation && liveLocation.length > 0;
-        if (!hasLiveLocation) {
-          try {
-            const checkSess = await Session.findOne({ phoneNumber: phone });
-            const coords   = checkSess?.deliveryData?.live_location_coords;
-            const loc      = checkSess?.deliveryData?.live_location;
-            const addrType = checkSess?.deliveryData?.address_type;
-            if (coords || loc || addrType === "live_location") {
-              hasLiveLocation = true;
-              liveLocation = loc || "";
-              console.log("📍 Re-fetched live location from DB:", loc?.substring(0,60));
-            }
-          } catch(e) { console.log("DB re-fetch error:", e.message); }
+        // Always re-fetch fresh session for delivery (ensures latest live_location)
+        let hasLiveLocation = false;
+        try {
+          const freshSess = await Session.findOne({ phoneNumber: phone }).lean();
+          const coords   = freshSess?.deliveryData?.live_location_coords;
+          const loc      = freshSess?.deliveryData?.live_location;
+          const addrType = freshSess?.deliveryData?.address_type;
+          if (loc) liveLocation = loc;
+          hasLiveLocation = !!(coords || loc || addrType === "live_location");
+          console.log(`📍 FRESH session | live: ${hasLiveLocation} | addrType: ${addrType} | loc: ${loc?.substring?.(0,50)}`);
+        } catch(e) {
+          console.log("DB re-fetch error:", e.message);
+          hasLiveLocation = liveLocation && liveLocation.length > 0;
         }
-        console.log(`📋 Delivery | live: ${hasLiveLocation} | liveLocation: ${liveLocation?.substring?.(0,50)}`);
+        console.log(`📋 Delivery | hasLive: ${hasLiveLocation}`);
 
         if (hasLiveLocation) {
           // ✅ Live location already shared → skip address form → go to DELIVERY_ADDONS
