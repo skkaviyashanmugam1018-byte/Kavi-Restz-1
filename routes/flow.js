@@ -114,9 +114,11 @@ router.post("/endpoint", async (req, res) => {
       return res.status(200).send(encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv));
     }
 
-    // Extract phone from token: "delivery_<phone>_<timestamp>"
-    const phone = (flow_token || "").split("_")[1] || null;
-    console.log(`📞 Phone: ${phone}`);
+    // Extract phone and orderType from token: "delivery_<phone>_<timestamp>_<orderType>"
+    const tokenParts = (flow_token || "").split("_");
+    const phone = tokenParts[1] || null;
+    const tokenOrderType = tokenParts[3] || ""; // delivery/takeaway/dine_in
+    console.log(`📞 Phone: ${phone} | tokenOrderType: ${tokenOrderType}`);
 
     // ══════════════════════════════════════════════════════
     // INIT — Jump directly to correct screen
@@ -133,11 +135,13 @@ router.post("/endpoint", async (req, res) => {
           cartSummary = sess.cart.map(i => `${i.name} x${i.qty}`).join(", ");
           totalAmount = `Rs.${sess.cart.reduce((s, i) => s + i.price * i.qty, 0)}`;
         }
-        preSelectedType = sess.preSelectedOrderType || "";
+        preSelectedType = sess.preSelectedOrderType || tokenOrderType || "";
         waName  = sess.whatsappName || "";
         waPhone = phone?.replace(/^91/, "") || "";
         liveLocation = sess.deliveryData?.live_location || "";
       }
+      // Fallback to token if session not loaded yet
+      if (!preSelectedType) preSelectedType = tokenOrderType || "delivery";
 
       console.log(`📋 preSelected: ${preSelectedType} | cart: ${cartSummary} | name: ${waName}`);
 
@@ -217,35 +221,61 @@ router.post("/endpoint", async (req, res) => {
     // ORDER_TYPE data_exchange fallback (if old flow JSON)
     // ══════════════════════════════════════════════════════
     if (screen === "ORDER_TYPE" && action === "data_exchange") {
-      const orderType = data.order_type || data.cart_summary?.includes("Table") ? "dine_in" : "delivery";
+      const orderType = data.order_type || tokenOrderType || "delivery";
       console.log(`📋 ORDER_TYPE fallback → ${orderType}`);
 
       const sess = await getSessionData(phone);
       let cartSummary = "Table Booking", totalAmount = "Rs.0";
-      if (sess?.cart?.length > 0) {
-        cartSummary = sess.cart.map(i => `${i.name} x${i.qty}`).join(", ");
-        totalAmount = `Rs.${sess.cart.reduce((s, i) => s + i.price * i.qty, 0)}`;
+      let hasLiveLocation = false, liveLocStr = "", waName2 = "", waPhone2 = "";
+
+      if (sess) {
+        if (sess.cart?.length > 0) {
+          cartSummary = sess.cart.map(i => `${i.name} x${i.qty}`).join(", ");
+          totalAmount = `Rs.${sess.cart.reduce((s, i) => s + i.price * i.qty, 0)}`;
+        }
+        waName2   = sess.whatsappName || "";
+        waPhone2  = phone?.replace(/^91/, "") || "";
+        liveLocStr = sess.deliveryData?.live_location || "";
+        const coords   = sess.deliveryData?.live_location_coords;
+        const addrType = sess.deliveryData?.address_type;
+        hasLiveLocation = !!(liveLocStr || coords || addrType === "live_location");
+        console.log(`📍 ORDER_TYPE | live: ${hasLiveLocation} | addrType: ${addrType}`);
       }
-      const initValues = {
-        customer_name:  sess?.whatsappName || "",
-        customer_phone: phone?.replace(/^91/, "") || "",
+
+      const initValues2 = {
+        customer_name:  waName2,
+        customer_phone: waPhone2,
+        order_type:     orderType,
       };
 
       if (orderType === "takeaway") {
         return res.status(200).send(encryptResponse({
           screen: "TAKEAWAY_DETAILS",
-          data: { order_type: "takeaway", cart_summary: cartSummary, total_amount: totalAmount, init_values: initValues, error_messages: {} }
+          data: { order_type: "takeaway", cart_summary: cartSummary, total_amount: totalAmount, init_values: initValues2, error_messages: {} }
         }, aesKey, iv));
       }
       if (orderType === "delivery") {
+        if (hasLiveLocation) {
+          // Live location shared → skip address form → DELIVERY_ADDONS
+          return res.status(200).send(encryptResponse({
+            screen: "DELIVERY_ADDONS",
+            data: {
+              order_type:"delivery", customer_name:waName2, customer_phone:waPhone2,
+              alternate_phone:"", delivery_address:liveLocStr, pincode:"",
+              live_location_address:liveLocStr, address_type:"live_location",
+              cart_summary:cartSummary, total_amount:totalAmount,
+              init_values:initValues2, error_messages:{}
+            }
+          }, aesKey, iv));
+        }
         return res.status(200).send(encryptResponse({
           screen: "DELIVERY_DETAILS",
-          data: { order_type: "delivery", cart_summary: cartSummary, total_amount: totalAmount, init_values: initValues, error_messages: {} }
+          data: { order_type: "delivery", cart_summary: cartSummary, total_amount: totalAmount, init_values: initValues2, error_messages: {} }
         }, aesKey, iv));
       }
       return res.status(200).send(encryptResponse({
         screen: "DINE_DETAILS",
-        data: { order_type: "dine_in", cart_summary: cartSummary, total_amount: totalAmount, init_values: initValues, error_messages: {} }
+        data: { order_type: "dine_in", cart_summary: cartSummary, total_amount: totalAmount, init_values: initValues2, error_messages: {} }
       }, aesKey, iv));
     }
 
