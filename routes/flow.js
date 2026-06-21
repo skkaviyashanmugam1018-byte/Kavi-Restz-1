@@ -160,14 +160,15 @@ router.post("/endpoint", async (req, res) => {
         if (!hasLiveLocation) {
           try {
             const checkSess = await Session.findOne({ phoneNumber: phone });
-            const coords = checkSess?.deliveryData?.live_location_coords;
-            const loc = checkSess?.deliveryData?.live_location;
-            if (coords || loc) {
+            const coords   = checkSess?.deliveryData?.live_location_coords;
+            const loc      = checkSess?.deliveryData?.live_location;
+            const addrType = checkSess?.deliveryData?.address_type;
+            if (coords || loc || addrType === "live_location") {
               hasLiveLocation = true;
               liveLocation = loc || "";
-              console.log("📍 Re-fetched live location from DB:", loc);
+              console.log("📍 Re-fetched live location from DB:", loc?.substring(0,60));
             }
-          } catch(e) {}
+          } catch(e) { console.log("DB re-fetch error:", e.message); }
         }
         console.log(`📋 Delivery | live: ${hasLiveLocation} | liveLocation: ${liveLocation?.substring?.(0,50)}`);
 
