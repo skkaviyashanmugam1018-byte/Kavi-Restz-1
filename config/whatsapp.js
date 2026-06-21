@@ -109,8 +109,8 @@ async function sendDeliveryFlow(to, cartSummary, totalAmount, orderType="") {
       orderType==="dine_in"
         ? "Fill in your table booking details below."
         : totalAmount && totalAmount!=="Rs.0"
-        ? `🛒 ${cartSummary}\n💰 Total: *${totalAmount}*\n\nFill your order details below:`
-        : "Fill your order details below:";
+        ? `🛒 ${cartSummary}\n💰 Total: *${totalAmount}*`
+        : "Please fill your details below:";
 
     const ctaText =
       orderType==="dine_in"  ? "Book a Table"        :
