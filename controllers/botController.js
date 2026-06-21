@@ -426,6 +426,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
           live_location_coords:{lat:locationData.lat,lng:locationData.lng},
           delivery_charge:dist.charge,
           distance_info:`📍 Live (${dist.km}km)`,
+          address_type:"live_location",
         };
         session.preSelectedOrderType = "delivery";
         session.markModified("deliveryData");
