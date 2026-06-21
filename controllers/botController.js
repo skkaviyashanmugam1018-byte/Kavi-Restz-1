@@ -169,12 +169,16 @@ const ADDON_PRICES_MAP = {
   sweet:{name:"Sweet (Kheer)",price:50},
 };
 const CELEBRATION_MAP = {
-  birthday:"🎂 Birthday Decoration",anniversary:"💑 Anniversary Setup",
-  cake:"🎂 Cake Arrangement",flowers:"💐 Flower Bouquet",
-  candle:"🕯️ Candle Light Dinner",board:"🪧 Welcome Board",photo:"📸 Photography",
+  birthday:  {name:"🎂 Birthday Decoration", price:299},
+  anniversary:{name:"💑 Anniversary Setup",  price:349},
+  cake:      {name:"🎂 Cake Arrangement",    price:499},
+  flowers:   {name:"💐 Flower Bouquet",      price:199},
+  candle:    {name:"🕯️ Candle Light Dinner", price:249},
+  board:     {name:"🪧 Welcome Board",       price:149},
+  photo:     {name:"📸 Photography",         price:599},
 };
 const SEATING_MAP = {
-  ac:"❄️ AC Hall",non_ac:"🌿 Non-AC",family_hall:"👨‍👩‍👧 Family Hall",outdoor:"🌳 Outdoor",
+  ac:"❄️ AC Hall",non_ac:"🌿 Non-AC",family_hall:"👨‍👩‍👧 Family Hall",outdoor:"🌳 Outdoor",vip:"👑 VIP",
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -294,7 +298,7 @@ async function placeOrder(from, session) {
     paymentMethod==="PAY_UPI" ?"UPI":
     paymentMethod==="PAY_REST"?"Pay at Restaurant":"Card";
 
-  const celebText = (celebration_addons||[]).map(id=>CELEBRATION_MAP[id]||id).filter(Boolean).join(", ");
+  const celebText = (celebration_addons||[]).map(id=>CELEBRATION_MAP[id]?.name||CELEBRATION_MAP[id]||id).filter(Boolean).join(", ");
   const seatLabel = SEATING_MAP[table_seating]||table_seating||"";
 
   const tableInfo =
@@ -520,15 +524,39 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
     // ── 🍽️ DINE IN → flow directly (NO browse needed) ────
     if (input==="ORDER_DINEIN") {
       session.preSelectedOrderType="dine_in";
-      session.state="AWAITING_FLOW";
       session.deliveryData={};
-      session.cart=[];
       session.markModified("preSelectedOrderType");
       session.markModified("deliveryData");
+      await session.save();
+      await sendButtons(from,
+        "🍽️ *Dine In* — How would you like to proceed?",
+        [
+          {id:"DINEIN_BOOK_ONLY",  title:"📅 Book Table Only"},
+          {id:"DINEIN_WITH_ORDER", title:"🍽️ Book + Pre-order Food"},
+        ]
+      );
+      return;
+    }
+
+    // ── 📅 DINE IN — Book table only ──────────────────────
+    if (input==="DINEIN_BOOK_ONLY") {
+      session.state="AWAITING_FLOW";
+      session.cart=[];
       session.markModified("cart");
       await session.save();
-      await sendText(from,"🍽️ *Dine In* — Fill booking details:");
-      await sendDeliveryFlow(from,"Table Booking",0);
+      await sendText(from,"📅 *Table Booking* — Fill your booking details:");
+      await sendDeliveryFlow(from,"Table Booking","Rs.0","dine_in");
+      return;
+    }
+
+    // ── 🍽️ DINE IN — Pre-order food first ─────────────────
+    if (input==="DINEIN_WITH_ORDER") {
+      session.state="CATALOGUE";
+      session.cart=[];
+      session.markModified("cart");
+      await session.save();
+      await sendText(from,"🍽️ *Book + Pre-order* — Add items to your cart first:");
+      await showBrowseOptions(from);
       return;
     }
 
@@ -784,7 +812,7 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       const orderTypeLabel=order_type==="delivery"?"🚚 Home Delivery":order_type==="takeaway"?"🥡 Take Away":"🍽️ Dine In";
       const delivLabel=order_type==="delivery"?`Rs.${deliveryCharge} (${distanceInfo})`:"Free";
       const addonText=addonItems.map(a=>`${a.name} (Rs.${a.price})`).join(", ");
-      const celebText=(Array.isArray(celebration_addons)?celebration_addons:[]).map(id=>CELEBRATION_MAP[id]||id).filter(Boolean).join(", ");
+      const celebText=(Array.isArray(celebration_addons)?celebration_addons:[]).map(id=>CELEBRATION_MAP[id]?.name||id).filter(Boolean).join(", ");
       const seatLabel=SEATING_MAP[table_seating]||table_seating||"";
       const itemsList=session.cart.map(i=>`• ${i.name} × ${i.qty} = Rs.${i.price*i.qty}`).join("\n");
 
@@ -815,25 +843,48 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       await session.save();
       console.log(`✅ Session saved | Grand Total: Rs.${grandTotal}`);
 
-      const isDineIn=order_type==="dine_in";
-      const billText=
-        (isDineIn?`✅ *Table Booking Confirmed!*\n\n`:`🧾 *Order Bill Summary*\n\n`)+
-        `👤 *Name:* ${customer_name}\n`+
-        `📞 *Phone:* ${customer_phone}\n`+
-        (alternate_phone?`📞 *Alt:* ${alternate_phone}\n`:"")+
-        `📍 *Address:* ${full_address}\n`+
-        `🚚 *Type:* ${orderTypeLabel}${tableInfo}\n`+
-        (addonText?`🍱 *Add-ons:* ${addonText}\n`:"")+
-        (special_instructions?`📝 *Note:* ${special_instructions}\n`:"")+
-        `─────────────────\n`+
-        (cartTotal>0?`🛒 *Items:*\n${itemsList}\n─────────────────\n`:"")+
-        (cartTotal>0?`🛒 *Food Total:* Rs.${cartTotal}\n`:"")+
-        (addonTotal>0?`🍱 *Add-ons:* Rs.${addonTotal}\n`:"")+
-        (order_type==="delivery"?`🚚 *Delivery:* ${delivLabel}\n`:"")+
-        `📊 *GST (5%):* Rs.${gstAmount}\n`+
-        `─────────────────\n`+
-        `💰 *Grand Total: Rs.${grandTotal}*\n\n`+
-        `Select payment method:`;
+      const isDineIn = order_type==="dine_in";
+      const celebList2 = (Array.isArray(celebration_addons)?celebration_addons:[])
+        .map(id=>CELEBRATION_MAP[id]).filter(Boolean);
+      const celebTotal2 = celebList2.reduce((s,c)=>s+(c.price||0),0);
+      const minTotal = isDineIn ? Math.max(grandTotal+celebTotal2, 500) : grandTotal;
+
+      const billText = isDineIn
+        ? `🎉 *Table Booking*\n\n` +
+          `👤 ${customer_name} | 📞 ${customer_phone}\n` +
+          (alternate_phone ? `📞 Alt: ${alternate_phone}\n` : "") +
+          `👥 ${table_persons} Guests | 📅 ${table_date}\n` +
+          `🕐 ${table_time} | 🪑 ${seatLabel}\n` +
+          (occasion_name ? `🎉 ${occasion_name}\n` : "") +
+          (celebText ? `🎊 Arrangements: ${celebText}\n` : "") +
+          (special_instructions ? `📝 ${special_instructions}\n` : "") +
+          `─────────────────\n` +
+          (cartTotal>0 ? `${itemsList}\n─────────────────\n` : "") +
+          (cartTotal>0 ? `Food: Rs.${cartTotal}\n` : "") +
+          (celebTotal2>0 ? `Add-ons: Rs.${celebTotal2}\n` : "") +
+          `GST (5%): Rs.${gstAmount}\n` +
+          `─────────────────\n` +
+          `💰 *Advance: Rs.${minTotal}*\n` +
+          `📍 Kattupillaiyar Kovil St, Rameswaram\n` +
+          `📞 95859 60612 | ⏰ 12PM–10:30PM\n` +
+          `─────────────────\n` +
+          `💳 Choose payment:`
+        : `🧾 *Bill Summary*\n\n` +
+          `👤 ${customer_name} | 📞 ${customer_phone}\n` +
+          (alternate_phone ? `📞 Alt: ${alternate_phone}\n` : "") +
+          `📍 ${full_address}\n` +
+          `${orderTypeLabel}${tableInfo}\n` +
+          (addonText ? `🍱 ${addonText}\n` : "") +
+          (special_instructions ? `📝 ${special_instructions}\n` : "") +
+          `─────────────────\n` +
+          (cartTotal>0 ? `${itemsList}\n─────────────────\n` : "") +
+          (cartTotal>0 ? `Food: Rs.${cartTotal}\n` : "") +
+          (addonTotal>0 ? `Add-ons: Rs.${addonTotal}\n` : "") +
+          (order_type==="delivery" ? `Delivery: ${delivLabel}\n` : "") +
+          `GST (5%): Rs.${gstAmount}\n` +
+          `─────────────────\n` +
+          `💰 *Total: Rs.${grandTotal}*\n\n` +
+          `💳 Choose payment:`;
 
       await sendButtons(from,billText,
         order_type==="dine_in"?[
