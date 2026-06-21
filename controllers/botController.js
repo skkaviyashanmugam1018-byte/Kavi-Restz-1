@@ -548,7 +548,6 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
       session.cart=[];
       session.markModified("cart");
       await session.save();
-      await sendText(from,"📅 *Table Booking* — Fill your booking details:");
       await sendDeliveryFlow(from,"Table Booking","Rs.0","dine_in");
       return;
     }
