@@ -14,7 +14,9 @@ const {
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
-const LOGO_URL   = "https://res.cloudinary.com/dxfphwvnf/image/upload/v1781880045/1002297751_u94hqe.jpg";
+const LOGO_URL         = "https://res.cloudinary.com/dxfphwvnf/image/upload/v1781880045/1002297751_u94hqe.jpg";
+const FEEDBACK_FLOW_ID  = process.env.FEEDBACK_FLOW_ID || "";
+const GOOGLE_REVIEW_URL = process.env.GOOGLE_REVIEW_URL || "https://search.google.com/local/writereview?placeid=ChIJXXXXXX";
 const GST_RATE   = 5;
 const MIN_DINE_ADVANCE = 500;
 
@@ -360,6 +362,66 @@ async function sendOrderStatus(phone, orderId, status, note = "") {
 📞 95859 60612 | 🍛 Kavi Chettinadu`
   );
   console.log(`📤 Status sent: ${status} → ${phone}`);
+
+  // Auto-send feedback request 30 mins after delivery
+  if (status === "delivered" && FEEDBACK_FLOW_ID) {
+    setTimeout(async () => {
+      await sendFeedbackRequest(phone, orderId);
+    }, 30 * 60 * 1000); // 30 minutes
+    console.log(`⏰ Feedback scheduled in 30 mins → ${phone}`);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// SEND FEEDBACK REQUEST — After order delivered
+// ─────────────────────────────────────────────────────────────
+async function sendFeedbackRequest(phone, orderId) {
+  if (!FEEDBACK_FLOW_ID) {
+    console.log("⚠️ FEEDBACK_FLOW_ID not set — skipping feedback");
+    return;
+  }
+  try {
+    const axios   = require("axios");
+    const baseUrl = `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION||"v25.0"}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const headers = {
+      Authorization:  `Bearer ${process.env.WHATSAPP_API_TOKEN}`,
+      "Content-Type": "application/json",
+    };
+    const flowToken = `feedback_${phone}_${Date.now()}`;
+    await axios.post(baseUrl, {
+      messaging_product: "whatsapp",
+      recipient_type:    "individual",
+      to:                phone,
+      type:              "interactive",
+      interactive: {
+        type:   "flow",
+        header: { type: "text", text: "🍛 Kavi Chettinadu" },
+        body:   { text: "How was your experience with us today? Your feedback means a lot to us 🙏" },
+        footer: { text: "Takes less than 1 minute!" },
+        action: {
+          name: "flow",
+          parameters: {
+            flow_message_version: "3",
+            flow_token:           flowToken,
+            flow_id:              FEEDBACK_FLOW_ID,
+            flow_cta:             "⭐ Rate Your Experience",
+            flow_action:          "navigate",
+            flow_action_payload: {
+              screen:  "FEEDBACK_RATES",
+              data: {
+                order_id:          orderId,
+                google_review_url: GOOGLE_REVIEW_URL,
+              }
+            }
+          }
+        }
+      }
+    }, { headers });
+    console.log(`📤 Feedback request sent → ${phone} | Order: ${orderId}`);
+  } catch (err) {
+    console.error("❌ sendFeedbackRequest error:", err.response?.data || err.message);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1176,4 +1238,4 @@ const handleMessage = async (from, messageBody, interactiveReply, locationData, 
   }
 };
 
-module.exports = { handleMessage, placeOrder, sendOrderStatus };
+module.exports = { handleMessage, placeOrder, sendOrderStatus, sendFeedbackRequest };
