@@ -11,10 +11,10 @@ const { getChargeFromPincode, getChargeFromLocation } = require("../config/dista
 let privateKey;
 if (process.env.PRIVATE_KEY) {
   privateKey = process.env.PRIVATE_KEY.replace(/\\n/g, "\n").replace(/\\r/g, "");
-  console.log("Key loaded from env, length:", privateKey.length);
+  console.log("🔑 Using PRIVATE_KEY env, length:", privateKey.length);
 } else {
   privateKey = fs.readFileSync(path.join(__dirname, "../private.pem"), "utf8");
-  console.log("Key loaded from file, length:", privateKey.length);
+  console.log("🔑 Using private.pem, length:", privateKey.length);
 }
 
 function decryptRequest(body) {
@@ -56,22 +56,23 @@ const ADDON_PRICES = {
   sweet:       { name: "Sweet (Kheer)", price: 50 },
 };
 const SEATING_MAP = {
-  ac:          "AC Hall",
-  non_ac:      "Non-AC",
-  family_hall: "Family Hall",
-  outdoor:     "Outdoor",
-  vip:         "VIP",
+  ac:          "❄️ AC Hall",
+  non_ac:      "🌿 Non-AC",
+  family_hall: "👨‍👩‍👧 Family Hall",
+  outdoor:     "🌳 Outdoor",
+  vip:         "👑 VIP",
 };
 const CELEBRATION_MAP = {
-  birthday:    { name: "Birthday Decoration",  price: 299 },
-  anniversary: { name: "Anniversary Setup",    price: 349 },
-  cake:        { name: "Cake Arrangement",     price: 499 },
-  flowers:     { name: "Flower Bouquet",       price: 199 },
-  candle:      { name: "Candle Light Dinner",  price: 249 },
-  board:       { name: "Welcome Name Board",   price: 149 },
-  photo:       { name: "Photography",          price: 599 },
+  birthday:    { name: "🎂 Birthday Decoration",  price: 299 },
+  anniversary: { name: "💑 Anniversary Setup",     price: 349 },
+  cake:        { name: "🎂 Cake Arrangement",       price: 499 },
+  flowers:     { name: "💐 Flower Bouquet",         price: 199 },
+  candle:      { name: "🕯️ Candle Light Dinner",   price: 249 },
+  board:       { name: "🪧 Welcome Name Board",     price: 149 },
+  photo:       { name: "📸 Photography",            price: 599 },
 };
 
+// ── Helper: get session data ──────────────────────────────
 async function getSessionData(phone) {
   try {
     return await Session.findOne({ phoneNumber: phone });
@@ -81,15 +82,22 @@ async function getSessionData(phone) {
   }
 }
 
+
+console.log("🔍 ENV CHECK:");
+console.log("  DELIVERY_FLOW_ID:", process.env.DELIVERY_FLOW_ID || "❌ NOT SET");
+console.log("  TAKEAWAY_FLOW_ID:", process.env.TAKEAWAY_FLOW_ID || "❌ NOT SET");
+console.log("  DINEIN_FLOW_ID:",   process.env.DINEIN_FLOW_ID   || "❌ NOT SET");
+console.log("  FEEDBACK_FLOW_ID:", process.env.FEEDBACK_FLOW_ID || "❌ NOT SET");
+
 // ── Main Route ────────────────────────────────────────────
 router.post("/endpoint", async (req, res) => {
   try {
     const body = req.body;
-    console.log("Flow endpoint | action:", body?.action || "encrypted");
+    console.log("📩 Flow endpoint v5 | action:", body?.action || "encrypted");
 
     // Unencrypted ping
     if (body?.action === "ping") {
-      console.log("Ping -> pong");
+      console.log("🏓 Ping → pong");
       return res.status(200).json({ version: "3.0", data: { status: "active" } });
     }
 
@@ -101,12 +109,12 @@ router.post("/endpoint", async (req, res) => {
     try {
       ({ decryptedBody, aesKey, iv } = decryptRequest(body));
     } catch(err) {
-      console.error("Decrypt error:", err.message);
+      console.error("❌ Decrypt error:", err.message);
       return res.status(421).json({ error: "Decryption failed" });
     }
 
     const { flow_token, data, action, screen } = decryptedBody;
-    console.log("Flow action:", action, "| screen:", screen);
+    console.log("📩 Flow:", JSON.stringify({ action, screen }, null, 2));
 
     // Encrypted ping
     if (action === "ping") {
@@ -117,24 +125,27 @@ router.post("/endpoint", async (req, res) => {
     const tokenParts = (flow_token || "").split("_");
     const phone = tokenParts[1] || null;
     // dine_in has underscore — join from index 3 onwards
-    const tokenOrderType = tokenParts.slice(3).join("_") || "";
-    console.log("Phone:", phone, "| orderType:", tokenOrderType);
+    const tokenOrderType = tokenParts.slice(3).join("_") || ""; // delivery/takeaway/dine_in
+    console.log(`📞 Phone: ${phone} | tokenOrderType: ${tokenOrderType}`);
 
-    // ── INIT ──────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════
+    // INIT — Each flow has its own screen as first screen
+    // No ORDER_TYPE screen needed (separate flows per type)
+    // ══════════════════════════════════════════════════════
     if (action === "INIT" || (action === "navigate" && (!screen || screen === ""))) {
-      console.log("INIT | tokenOrderType:", tokenOrderType);
+      console.log("📋 INIT | tokenOrderType:", tokenOrderType);
 
       const sess = await getSessionData(phone);
-      let cartSummary = "Table Booking", totalAmount = "Rs.0";
+      let cartSummary = "Table Booking", totalAmount = "₹0";
       let waName = "", waPhone = "", liveLocation = "";
 
       if (sess) {
         if (sess.cart?.length > 0) {
           cartSummary = sess.cart.map(i => `${i.name} x${i.qty}`).join(", ");
-          totalAmount = `Rs.${sess.cart.reduce((s, i) => s + i.price * i.qty, 0)}`;
+          totalAmount = `₹${sess.cart.reduce((s, i) => s + i.price * i.qty, 0)}`;
         }
-        waName       = sess.whatsappName || "";
-        waPhone      = phone?.replace(/^91/, "") || "";
+        waName  = sess.whatsappName || "";
+        waPhone = phone?.replace(/^91/, "") || "";
         liveLocation = sess.deliveryData?.live_location || "";
       }
 
@@ -143,8 +154,9 @@ router.post("/endpoint", async (req, res) => {
         customer_phone: waPhone,
       };
 
-      // DELIVERY FLOW
+      // ── DELIVERY FLOW ──────────────────────────────────
       if (tokenOrderType === "delivery") {
+        // Re-fetch fresh for live location check
         let hasLiveLocation = false;
         try {
           const fresh    = await Session.findOne({ phoneNumber: phone }).lean();
@@ -153,7 +165,7 @@ router.post("/endpoint", async (req, res) => {
           const addrType = fresh?.deliveryData?.address_type;
           if (loc) liveLocation = loc;
           hasLiveLocation = !!(coords || loc || addrType === "live_location");
-          console.log("Live location:", hasLiveLocation, "| addrType:", addrType);
+          console.log(`📍 Live: ${hasLiveLocation} | addrType: ${addrType}`);
         } catch(e) { console.log("Re-fetch error:", e.message); }
 
         return res.status(200).send(encryptResponse({
@@ -168,7 +180,7 @@ router.post("/endpoint", async (req, res) => {
         }, aesKey, iv));
       }
 
-      // TAKEAWAY FLOW
+      // ── TAKEAWAY FLOW ──────────────────────────────────
       if (tokenOrderType === "takeaway") {
         return res.status(200).send(encryptResponse({
           screen: "TAKEAWAY_DETAILS",
@@ -181,7 +193,7 @@ router.post("/endpoint", async (req, res) => {
         }, aesKey, iv));
       }
 
-      // DINE IN FLOW
+      // ── DINE IN FLOW ───────────────────────────────────
       return res.status(200).send(encryptResponse({
         screen: "DINE_DETAILS",
         data: {
@@ -193,159 +205,153 @@ router.post("/endpoint", async (req, res) => {
       }, aesKey, iv));
     }
 
-    // ── COMPLETE ──────────────────────────────────────────
+
+    // ══════════════════════════════════════════════════════
+    // COMPLETE — Process order and send bill
+    // ══════════════════════════════════════════════════════
     if (action === "complete") {
-      console.log("Flow COMPLETE!");
-      console.log("Data:", JSON.stringify(data, null, 2));
+      console.log("✅ Flow COMPLETE!");
+      console.log("📦 Data:", JSON.stringify(data, null, 2));
 
       const {
         order_type,
+        address_type,
         delivery_address, pincode,
         alternate_phone: alt_phone_from_flow,
         selected_addons, special_instructions,
         table_persons, table_date, table_time, table_seating,
         celebration_addons, occasion_name,
         pickup_date, pickup_time,
-        live_location_address,
       } = data;
 
+      // Single session fetch for the entire COMPLETE handler
       const session = await getSessionData(phone);
       if (!session) {
-        console.error("Session not found:", phone);
+        console.error("❌ Session not found:", phone);
         return res.status(200).send(encryptResponse({ screen: "SUCCESS", data: { status: "error" } }, aesKey, iv));
       }
 
-      const customer_name   = data.customer_name  || session?.whatsappName || "Customer";
-      const customer_phone  = data.customer_phone || phone?.replace(/^91/, "") || "";
+      const customer_name  = data.customer_name  || session?.whatsappName || "Customer";
+      const customer_phone = data.customer_phone || phone?.replace(/^91/, "") || "";
       const alternate_phone = alt_phone_from_flow || "";
 
-      // Delivery charge
+      // ── Delivery charge ──────────────────────────────────
       let deliveryCharge = 0, distanceInfo = "";
       if (order_type === "delivery") {
         const liveCoords = session?.deliveryData?.live_location_coords;
         let dr;
         if (liveCoords) {
-          dr           = getChargeFromLocation(liveCoords.lat, liveCoords.lng);
-          distanceInfo = `Live Location (${dr.km}km)`;
+          dr = getChargeFromLocation(liveCoords.lat, liveCoords.lng);
+          distanceInfo = `📍 Live Location (${dr.km}km)`;
         } else if (pincode) {
-          dr           = getChargeFromPincode(pincode);
-          distanceInfo = `${dr.area || pincode} (${dr.km}km)`;
+          dr = getChargeFromPincode(pincode);
+          distanceInfo = `📮 ${dr.area || pincode} (${dr.km}km)`;
         } else {
-          dr           = { km: 3, charge: 40 };
-          distanceInfo = "Address provided";
+          dr = { km: 3, charge: 40 };
+          distanceInfo = "📍 Address provided";
         }
         deliveryCharge = dr.charge;
-        console.log("Delivery:", distanceInfo, "-> Rs.", deliveryCharge);
+        console.log(`🚚 Delivery: ${distanceInfo} → Rs.${deliveryCharge}`);
       }
 
-      // Full address
-      const liveAddr    = live_location_address || session?.deliveryData?.live_location || "";
+      // ── Address ──────────────────────────────────────────
       const full_address =
         order_type === "delivery"
-          ? liveAddr
-            ? `${delivery_address ? delivery_address + ", " : ""}${liveAddr}${pincode ? " - " + pincode : ""}`
-            : [delivery_address, pincode ? `- ${pincode}` : null].filter(Boolean).join(" ")
+          ? [delivery_address, pincode ? `- ${pincode}` : null].filter(Boolean).join(" ")
           : order_type === "takeaway"
           ? `Take Away | ${pickup_date || ""} ${pickup_time || "ASAP"}`
           : "Dine In";
 
-      // Cart & totals
-      const cartTotal  = (session.cart || []).reduce((s, i) => s + i.price * i.qty, 0);
-      const addonList  = Array.isArray(selected_addons)    ? selected_addons    : [];
-      const celebList_ = Array.isArray(celebration_addons) ? celebration_addons : [];
+      // ── Cart & totals ────────────────────────────────────
+
+      const cartTotal  = session.cart.reduce((s, i) => s + i.price * i.qty, 0);
+      const addonList  = Array.isArray(selected_addons) ? selected_addons : [];
       const addonItems = addonList.map(id => ADDON_PRICES[id]).filter(Boolean);
       const addonTotal = addonItems.reduce((s, a) => s + a.price, 0);
-      const celebItems = celebList_.map(id => CELEBRATION_MAP[id]).filter(Boolean);
-      const celebTotal = celebItems.reduce((s, c) => s + c.price, 0);
-      const seatLabel  = SEATING_MAP[table_seating] || table_seating || "";
+      const celebList   = (Array.isArray(celebration_addons) ? celebration_addons : [])
+        .map(id => CELEBRATION_MAP[id]).filter(Boolean);
+      const celebTotal  = celebList.reduce((s, c) => s + c.price, 0);
+      const celebText   = celebList.map(c => `${c.name} (Rs.${c.price})`).join(", ");
+      const seatLabel   = SEATING_MAP[table_seating] || table_seating || "";
       const subtotal   = cartTotal + addonTotal + celebTotal + deliveryCharge;
       const gstAmount  = Math.round(subtotal * GST / 100);
+      // Dine In: minimum booking amount Rs.500
       const rawTotal   = subtotal + gstAmount;
       const grandTotal = order_type === "dine_in" ? Math.max(rawTotal, 500) : rawTotal;
 
-      const addonText  = addonItems.map(a => `${a.name} (Rs.${a.price})`).join(", ");
-      const celebText  = celebItems.map(c => `${c.name} (Rs.${c.price})`).join(", ");
-      const itemsList  = (session.cart || []).map(i => `- ${i.name} x${i.qty} = Rs.${i.price * i.qty}`).join("\n");
-      const delivLabel = `Rs.${deliveryCharge} (${distanceInfo})`;
+      const addonText   = addonItems.map(a => `${a.name} (Rs.${a.price})`).join(", ");
+      const itemsList  = session.cart.map(i => `• ${i.name} × ${i.qty} = Rs.${i.price * i.qty}`).join("\n");
 
       const orderTypeLabel =
-        order_type === "delivery" ? "Home Delivery" :
-        order_type === "takeaway" ? "Take Away"     : "Dine In";
+        order_type === "delivery" ? "🚚 Home Delivery" :
+        order_type === "takeaway" ? "🥡 Take Away"     : "🍽️ Dine In";
 
-      // tableInfo string — FIXED (was undefined before)
-      const tableInfo =
-        order_type === "dine_in" && table_persons
-          ? `\nGuests: ${table_persons} | Date: ${table_date}\nTime: ${table_time} | Seating: ${seatLabel}` +
-            (occasion_name ? `\nOccasion: ${occasion_name}` : "") +
-            (celebText     ? `\nArrangements: ${celebText}`  : "")
-          : order_type === "takeaway"
-          ? `\nPickup: ${pickup_date || ""} | ${pickup_time || "ASAP"}`
-          : "";
 
-      // Save to session
+
+      // ── Save to session ──────────────────────────────────
       session.deliveryData = {
-        name:                 customer_name,
-        phone:                customer_phone,
-        alternate_phone:      alternate_phone,
+        name:                 customer_name     || "Customer",
+        phone:                customer_phone    || phone,
+        alternate_phone:      alternate_phone   || "",
         address:              full_address,
         order_type,
-        table_persons:        table_persons  || "",
-        table_date:           table_date     || "",
-        table_time:           table_time     || "",
-        table_seating:        table_seating  || "",
+        table_persons:        table_persons     || "",
+        table_date:           table_date        || "",
+        table_time:           table_time        || "",
+        table_seating:        table_seating     || "",
         seating_label:        seatLabel,
-        pickup_date:          pickup_date    || "",
-        pickup_time:          pickup_time    || "",
+        pickup_date:          pickup_date       || "",
+        pickup_time:          pickup_time       || "",
         addons:               addonItems,
         addon_total:          addonTotal,
         delivery_charge:      deliveryCharge,
         distance_info:        distanceInfo,
         gst_amount:           gstAmount,
         special_instructions: special_instructions || "",
-        celebration_addons:   celebList_,
-        occasion_name:        occasion_name  || "",
+        celebration_addons:   Array.isArray(celebration_addons) ? celebration_addons : [],
+        occasion_name:        occasion_name     || "",
         grand_total:          grandTotal,
         live_location:        session?.deliveryData?.live_location || "",
       };
       session.state = "PAYMENT_SELECT";
       session.markModified("deliveryData");
       await session.save();
-      console.log("Session saved | Grand Total: Rs.", grandTotal);
+      console.log(`✅ Session saved | Grand Total: Rs.${grandTotal} | State: PAYMENT_SELECT`);
 
-      // Bill text — FIXED (tableInfo and delivLabel now defined)
+      // ── Bill text ────────────────────────────────────────
       const isDineIn = order_type === "dine_in";
       const billText =
-        (isDineIn ? `*Table Booking*\n` : `*Bill Summary*\n`) +
-        `Name: ${customer_name} | Ph: ${customer_phone}\n` +
-        (alternate_phone ? `Alt: ${alternate_phone}\n` : "") +
-        (!isDineIn ? `Address: ${full_address}\n` : "") +
-        `Type: ${orderTypeLabel}${tableInfo}\n` +
-        (addonText ? `Add-ons: ${addonText}\n` : "") +
-        (special_instructions ? `Note: ${special_instructions}\n` : "") +
-        `-------------\n` +
-        (cartTotal > 0 ? `${itemsList}\n-------------\n` : "") +
+        (isDineIn ? `🍽️ *Table Booking*\n` : `🧾 *Bill Summary*\n`) +
+        `👤 ${customer_name} | 📞 ${customer_phone}\n` +
+        (!isDineIn ? `📍 ${full_address}\n` : "") +
+        `${orderTypeLabel}${tableInfo}\n` +
+        (addonText ? `🍱 ${addonText}\n` : "") +
+        (special_instructions ? `📝 ${special_instructions}\n` : "") +
+        `─────────────` +
+        (cartTotal > 0 ? `\n${itemsList}` : "") +
+        `\n─────────────\n` +
         (cartTotal > 0 ? `Food: Rs.${cartTotal}\n` : "") +
         (addonTotal > 0 ? `Add-ons: Rs.${addonTotal}\n` : "") +
         (order_type === "delivery" ? `Delivery: ${delivLabel}\n` : "") +
-        `GST (${GST}%): Rs.${gstAmount}\n` +
-        `-------------\n` +
-        `*Total: Rs.${grandTotal}*\n\n` +
-        `Choose payment:`;
+        `GST: Rs.${gstAmount}\n` +
+        `─────────────\n` +
+        `💰 *Total: Rs.${grandTotal}*\n\n` +
+        `💳 Choose payment:`;
 
-      // Payment buttons
+      // ── Payment buttons ──────────────────────────────────
       const payButtons =
         order_type === "dine_in" ? [
-          { id: "PAY_REST", title: "Pay at Restaurant" },
-          { id: "PAY_UPI",  title: "UPI Payment"       },
-          { id: "PAY_CARD", title: "Card Payment"       },
+          { id: "PAY_REST", title: "🍽️ Pay at Restaurant" },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"       },
+          { id: "PAY_CARD", title: "💳 Card Payment"       },
         ] : order_type === "takeaway" ? [
-          { id: "PAY_COD",  title: "Cash on Pickup"    },
-          { id: "PAY_UPI",  title: "UPI Payment"       },
-          { id: "PAY_CARD", title: "Card Payment"       },
+          { id: "PAY_COD",  title: "💵 Cash on Pickup"    },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"       },
+          { id: "PAY_CARD", title: "💳 Card Payment"       },
         ] : [
-          { id: "PAY_COD",  title: "Cash on Delivery"  },
-          { id: "PAY_UPI",  title: "UPI Payment"       },
-          { id: "PAY_CARD", title: "Card Payment"       },
+          { id: "PAY_COD",  title: "💵 Cash on Delivery"  },
+          { id: "PAY_UPI",  title: "📲 UPI Payment"       },
+          { id: "PAY_CARD", title: "💳 Card Payment"       },
         ];
 
       await sendButtons(phone, billText, payButtons);
@@ -355,12 +361,13 @@ router.post("/endpoint", async (req, res) => {
     }
 
     // ── FEEDBACK COMPLETE ─────────────────────────────────
-    if (data?.food_quality) {
+    if (action === "complete" && (screen === "GOOGLE_REVIEW" || data?.food_quality)) {
       const {
         food_quality, service_rating, value_rating,
         overall_experience, review_text, order_id, google_review_url
       } = data;
 
+      // Calculate avg rating
       const ratings  = [food_quality, service_rating, value_rating, overall_experience]
         .map(r => parseInt(r?.split("_")[0]) || 0)
         .filter(n => n > 0);
@@ -368,17 +375,20 @@ router.post("/endpoint", async (req, res) => {
         ? (ratings.reduce((s, n) => s + n, 0) / ratings.length).toFixed(1)
         : "0";
 
-      console.log(`Feedback | Phone: ${phone} | Order: ${order_id} | Avg: ${avgScore}/5`);
+      console.log(`⭐ Feedback received | Phone: ${phone} | Order: ${order_id} | Avg: ${avgScore}/5`);
+      console.log(`   Food: ${food_quality} | Service: ${service_rating} | Value: ${value_rating} | Overall: ${overall_experience}`);
+      if (review_text) console.log(`   Review: ${review_text}`);
 
+      // Thank you message with Google review link
       const { sendText } = require("../config/whatsapp");
       const thankMsg =
-        `*Thank you for your feedback!*\n\n` +
+        `⭐ *Thank you for your feedback!*\n\n` +
         `Your rating: *${avgScore}/5*\n` +
-        `We appreciate your time.\n\n` +
+        `We appreciate your time 🙏\n\n` +
         (google_review_url && google_review_url.includes("google")
-          ? `Help others find us - drop a quick Google review!\n${google_review_url}\n\n`
+          ? `📍 Help others find us — drop a quick Google review!\n${google_review_url}`
           : "") +
-        `Kavi Chettinadu | 95859 60612`;
+        `\n\n🍛 Kavi Chettinadu | 📞 95859 60612`;
 
       await sendText(phone, thankMsg);
 
@@ -388,11 +398,11 @@ router.post("/endpoint", async (req, res) => {
     }
 
     // ── Unknown ───────────────────────────────────────────
-    console.log("Unhandled action:", action, "| screen:", screen);
+    console.log("⚠️ Unhandled:", { action, screen });
     return res.status(200).send(encryptResponse({ version: "3.0", data: { status: "active" } }, aesKey, iv));
 
   } catch(err) {
-    console.error("Flow error:", err.message);
+    console.error("❌ Flow error:", err.message);
     console.error(err.stack);
     return res.status(200).json({ version: "3.0", error: "Server Error" });
   }
